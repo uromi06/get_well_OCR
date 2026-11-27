@@ -118,21 +118,35 @@ Six kinds of damage (blur, noise, skew, shadow, WhatsApp compression, fax) at fo
 
 ---
 
-## 🚀 Quick start (Windows)
+## 🚀 Quick start
 
-```powershell
+```bash
 git clone https://github.com/uromi06/get_well_OCR.git
 cd get_well_OCR
-.\setup_windows.ps1                    # creates .venv, installs everything, creates .env
-.\.venv\Scripts\Activate.ps1
-python scripts\process_case.py         # runs the test case, prints the scorecard
-streamlit run app.py                   # opens http://localhost:8501
+./start.sh          # macOS / Linux
+start.bat           # Windows (or double-click it)
+```
+
+That's it. On the first start the launcher sets up everything by itself, then opens **http://localhost:8501**:
+
+1. finds Python 3.10 to 3.13 (prefers 3.12), or installs 3.12 (brew / winget / apt)
+2. creates `.venv` and installs `requirements.txt` (later starts reinstall only when the file changed)
+3. installs Tesseract with German (brew / winget / apt / dnf), or downloads missing language data into `.tessdata/`
+4. creates `.env` from `.env.example`
+
+Later starts take a few seconds. Options: `--setup-only`, `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
+
+Pipeline and test scripts (after the first start):
+
+```bash
+source .venv/bin/activate              # Windows: .\.venv\Scripts\Activate.ps1
+python scripts/process_case.py         # runs the test case, prints the scorecard
 ```
 
 <details>
 <summary><b>🔧 Requirements and options</b></summary>
 
-- Python 3.12, Tesseract 5 with the **German** language pack ([UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki))
+- Python 3.12 and Tesseract 5 with the **German** language pack. `start.sh` / `start.bat` install both. Manual install on Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki)
 - Optional: Azure Document Intelligence (EU region). Put endpoint and key in `.env` (**never commit it**)
 - The classifier model (`multilingual-e5-small`, ~120 MB) downloads once, then runs offline
 
@@ -149,6 +163,7 @@ python scripts\make_stress_set.py ; python scripts\run_stress.py --quick
 
 ```
 get_well_OCR/
+├── start.sh / start.bat    One-command launcher: sets up the environment, starts the app
 ├── app.py                  Streamlit entry point
 ├── views/                  Screens (case workspace, single page, UI components)
 ├── src/                    Pipeline: no UI code, reusable by a backend API
