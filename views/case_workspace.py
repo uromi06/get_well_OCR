@@ -17,12 +17,14 @@ import json
 import re
 from datetime import datetime
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 from src import config, store
 from src.case import CONFIDENCE_MIN, SHARPNESS_MIN, process_case, summary_text
 from src.evaluate import score_case
+from src.med_history import dose_history, page_numbers
 from src.report import er_report
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
 from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, cave_panel, chip, cleaned_page,
@@ -490,6 +492,51 @@ with tabs[2]:
         review["meds"] = rows
         _save_review()
         st.rerun()
+
+    # ---- dose history of one drug, from the pages in its "Quelle (Seiten)" column
+    st.markdown("##### Dosisverlauf je Wirkstoff")
+    st.caption("Was jede Quellseite zum gewählten Wirkstoff sagt, nach Dokumentdatum sortiert. "
+               "Tagesdosis = Stärke × Summe der Einnahmen, z. B. 2,5 mg × 1-0-1-0 = 5 mg/Tag. "
+               "Nur Lesehilfe: maßgeblich ist die Tabelle oben.")
+    med_rows = [r for r in review["meds"] if str(r.get("name") or "").strip()]
+    if not med_rows:
+        st.info("Keine Medikamente in der Tabelle.")
+    else:
+        pick = st.selectbox("Wirkstoff", range(len(med_rows)), key=f"dose_pick_{case_id}",
+                            format_func=lambda i: f"{med_rows[i]['name']}   (S. {med_rows[i].get('sources') or '–'})")
+        sel = med_rows[pick]
+        hist = dose_history(result, sel["name"], page_numbers(sel.get("sources")))
+        if not st.checkbox("Auch Erwähnungen ohne Dosisangabe zeigen", key=f"dose_all_{case_id}"):
+            hist = [h for h in hist if h["change"] != "nur erwähnt"]
+        if not hist:
+            st.info(f"Zu „{sel['name']}“ gibt es auf den Quellseiten keine gelesene Angabe "
+                    "(z. B. weil der Name in der Tabelle geändert oder die Zeile von Hand ergänzt wurde).")
+        else:
+            changed = sum(1 for h in hist if h["change"].startswith(("↑", "↓", "geändert")))
+            st.markdown(
+                f"**{len(hist)} Angaben** auf {len({h['page'] for h in hist})} Seiten · "
+                + (f"**Dosis {changed}× geändert**" if changed else "Dosis unverändert")
+                + f" · aktuell laut Tabelle: {sel.get('strength') or '?'} {sel.get('dosing') or ''}".rstrip())
+            de_date = lambda d: datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m.%Y") if d else "ohne Datum"
+            st.dataframe(pd.DataFrame([{
+                "Seite": h["page"], "Dokument": h["document"], "Datum": de_date(h["date"]),
+                "Stärke": h["strength"] or "", "Dosierung": h["dosing"] or "", "Tagesdosis": h["daily_text"],
+                "Status": STATUS_LABELS.get(h["status"] or "", ""), "Änderung": h["change"],
+                "Textstelle": h["source_text"]} for h in hist]),
+                hide_index=True, use_container_width=True,
+                column_config={"Seite": st.column_config.NumberColumn(width="small"),
+                               "Änderung": st.column_config.TextColumn(width="medium"),
+                               "Textstelle": st.column_config.TextColumn(width="large")})
+            points = [h for h in hist if h["daily"]]
+            if len(points) >= 2 and len({h["daily"][1] for h in points}) == 1:
+                unit = points[0]["daily"][1]
+                chart_df = pd.DataFrame({
+                    "Quelle": [f"{i}. S. {h['page']} · {de_date(h['date'])}" for i, h in enumerate(points, 1)],
+                    "Tagesdosis": [h["daily"][0] for h in points]})
+                st.altair_chart(alt.Chart(chart_df).mark_line(point=True, interpolate="step-after").encode(
+                    x=alt.X("Quelle:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("Tagesdosis:Q", title=f"Tagesdosis ({unit})", scale=alt.Scale(zero=True)),
+                    tooltip=["Quelle", "Tagesdosis"]).properties(height=220), use_container_width=True)
 
     changes = _audit()
     if changes:
