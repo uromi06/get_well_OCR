@@ -1,5 +1,5 @@
-# Secrets: never commit these
-.env
+# .env is committed on purpose (team keys, private repo). Keep the repo private.
+
 
 # Anything real or private stays on your laptop only
 data/private/
