@@ -25,7 +25,7 @@ TESSERACT_LANG = "deu+eng"
 
 # Mistral on Azure AI Foundry (EU region, provided by the hackathon)
 #   OCR:  Mistral Document AI, returns Markdown per page
-#   Chat: Mistral Large 3 (OpenAI-compatible chat completions), writes the patient history text
+#   Chat: Mistral Large 3 (OpenAI-compatible), optional extraction and patient history
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
 MISTRAL_CHAT_ENDPOINT = os.getenv("MISTRAL_CHAT_ENDPOINT", "").strip()
 MISTRAL_CHAT_MODEL = os.getenv("MISTRAL_CHAT_MODEL", "Mistral-Large-3").strip()
@@ -35,6 +35,9 @@ MISTRAL_OCR_KEY = os.getenv("MISTRAL_OCR_KEY", "").strip() or MISTRAL_API_KEY
 
 AZURE_DI_ENDPOINT = os.getenv("AZURE_DI_ENDPOINT", "")
 AZURE_DI_KEY = os.getenv("AZURE_DI_KEY", "")
+
+# Page extraction: local rules by default, or Mistral with a rules fallback
+EXTRACTOR = os.getenv("EXTRACTOR", "rules").lower()   # rules | llm
 
 # Review: fields below this confidence are flagged for the doctor to check
 LOW_CONFIDENCE = 0.80

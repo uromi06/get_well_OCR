@@ -37,9 +37,11 @@ STATUS_LABELS = {"active": "aktiv", "new": "neu", "paused": "pausiert", "stopped
 FACT_COLORS_BGR = {  # highlight colours on the page image (OpenCV uses BGR)
     "meds": (235, 99, 37), "diagnoses": (92, 81, 225), "labs": (178, 145, 8),
     "cave": (60, 20, 220), "contacts": (60, 130, 13), "findings": (180, 60, 150), "negatives": (120, 120, 120),
+    "corrections": (18, 140, 245),
 }
 FACT_LABELS = {"meds": "Medikation", "diagnoses": "Diagnose", "labs": "Labor", "cave": "CAVE",
-               "contacts": "Kontakt", "findings": "Befund", "negatives": "Negativbefund"}
+               "contacts": "Kontakt", "findings": "Befund", "negatives": "Negativbefund",
+               "corrections": "KI-Korrektur"}
 
 CSS = """
 <style>
@@ -98,6 +100,10 @@ code {font-family: "Atkinson Hyperlegible", monospace !important;}
           padding:.6rem .9rem; margin-bottom:1rem;}
 .gw-note h4 {color:var(--amber); font-size:1rem; margin:0 0 .3rem 0;}
 .gw-note ul {margin:0; padding-left:1.1rem;} .gw-note li {color:var(--ink); margin:.2rem 0;}
+.gw-fix s {color:var(--ink-2); text-decoration-color:var(--amber);}
+.gw-fix .gw-fix-kind {display:inline-block; padding:0 .35rem; border:1px solid var(--amber);
+  border-radius:4px; color:var(--amber); font-size:.75rem; font-weight:700;}
+.gw-fix .gw-muted {color:var(--ink-2);}
 .gw-contact {border-left:4px solid var(--ok); background:var(--ok-bg); border-radius:0 8px 8px 0; padding:.6rem .9rem;}
 .gw-contact h4 {color:var(--ok); font-size:1rem; margin:0 0 .3rem 0;}
 /* medication table */
@@ -217,6 +223,19 @@ def card(title: str, items: list[str], kind: str = "info", empty: str = "Keine A
     return f'<div class="{cls}"><h4>{esc(title)}</h4>{body}</div>'
 
 
+def correction_list(items: list[dict]) -> str:
+    labels = {"ocr_typo": "OCR-Fehler", "implausible": "unplausibel",
+              "document_correction": "Korrektur im Dokument"}
+    rows = []
+    for item in items:
+        kind = item["kind"]
+        corrected = item["corrected"] or "kein Vorschlag"
+        badge = f'<span class="gw-fix-kind">{esc(labels.get(kind, kind))}</span>'
+        rows.append(f'<li><s>{esc(item["original"])}</s> → <b>{esc(corrected)}</b> {badge}'
+                    f'{sources([item["page"]])}<br><span class="gw-muted">{esc(item["reason"])}</span></li>')
+    return '<div class="gw-note gw-fix"><h4>KI-Korrekturen – bitte prüfen</h4><ul>' + "".join(rows) + "</ul></div>"
+
+
 def html_block(markup: str):
     st.markdown(markup, unsafe_allow_html=True)
 
@@ -243,7 +262,10 @@ def highlight(clean: np.ndarray, lines: list[dict], facts: list[dict]) -> np.nda
     by_text = {}
     for f in facts:
         if f.get("source_text"):
-            by_text.setdefault(f["source_text"], f["kind"])
+            if f["kind"] == "corrections":
+                by_text[f["source_text"]] = f["kind"]
+            else:
+                by_text.setdefault(f["source_text"], f["kind"])
     pad = max(4, w // 300)
     for line in lines:
         kind = by_text.get(line["text"])
@@ -299,6 +321,8 @@ def med_table(rows: list[dict]) -> str:
             tags += f'<span class="gw-st {r["status"]}">{labels[r["status"]]}</span> '
         if r.get("flag"):
             tags += '<span class="gw-st unk">prüfen</span> '
+        if r.get("ai_fix"):
+            tags += '<span class="gw-st unk" title="KI-Hinweis zur Quellzeile; bitte am Dokument prüfen">KI-korrigiert</span> '
         if r.get("confirmed"):
             tags += '<span class="gw-ok" title="ärztlich bestätigt">✓</span>'
         pages = [x.strip() for x in str(r["sources"]).split(",") if x.strip()]

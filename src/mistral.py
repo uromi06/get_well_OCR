@@ -103,16 +103,19 @@ def markdown_to_lines(md: str) -> list[str]:
 
 # ------------------------------------------------------------------ chat
 
-def chat(messages: list[dict], temperature: float = 0.0, max_tokens: int = 700, use_cache: bool = True) -> str:
-    key = hashlib.sha1(json.dumps([config.MISTRAL_CHAT_MODEL, messages, temperature], ensure_ascii=False)
+def chat(messages: list[dict], temperature: float = 0.0, max_tokens: int = 700, use_cache: bool = True,
+         json_mode: bool = False) -> str:
+    key = hashlib.sha1(json.dumps([config.MISTRAL_CHAT_MODEL, messages, temperature] + (["json"] if json_mode else []),
+                                  ensure_ascii=False)
                        .encode("utf-8")).hexdigest()[:16]
     cache = config.CACHE_DIR / f"mistral_chat_{key}.json"
     if use_cache and cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))["text"]
-    data = _post(config.MISTRAL_CHAT_ENDPOINT, config.MISTRAL_API_KEY, {
-        "model": config.MISTRAL_CHAT_MODEL, "messages": messages,
-        "temperature": temperature, "max_tokens": max_tokens,
-    })
+    payload = {"model": config.MISTRAL_CHAT_MODEL, "messages": messages,
+               "temperature": temperature, "max_tokens": max_tokens}
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    data = _post(config.MISTRAL_CHAT_ENDPOINT, config.MISTRAL_API_KEY, payload)
     try:
         text = data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError) as e:
