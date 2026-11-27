@@ -321,8 +321,11 @@ async def http_error(request: Request, exc: HTTPException):
 async def headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path == "/sw.js" or path in ("/", "/index.html"):
-        response.headers["Cache-Control"] = "no-cache"          # new versions arrive on the next start
+    if path in ("/", "/index.html", "/sw.js") or path.endswith((".js", ".css", ".webmanifest")):
+        # always revalidate (cheap 304 via ETag): a deploy reaches phones on the next start, never a stale copy
+        response.headers["Cache-Control"] = "no-cache"
+    if path.startswith("/vendor/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"   # versioned third-party files
     if path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")  # patient data never in a browser cache
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
