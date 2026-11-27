@@ -13,6 +13,8 @@
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
+            "repo:uromi06@212906722/get_well_OCR@1473581103:ref:refs/heads/main",
+            "repo:uromi06@212906722/get_well_OCR@1473581103:environment:production",
             "repo:uromi06/get_well_OCR:ref:refs/heads/main",
             "repo:uromi06/get_well_OCR:environment:production"
           ]
