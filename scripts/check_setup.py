@@ -32,7 +32,7 @@ else:
 if sys.prefix != sys.base_prefix:
     report(OK, "Virtual environment is active")
 else:
-    report(WARN, "Virtual environment is NOT active", r"Run: .\.venv\Scripts\Activate.ps1")
+    report(WARN, "Virtual environment is NOT active", "Run the app with ./start.sh or start.bat (it uses .venv automatically)")
 
 # 3. Packages
 packages = {
