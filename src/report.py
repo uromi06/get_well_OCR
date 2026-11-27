@@ -8,12 +8,13 @@ Format agreed with the ER doctor (plain text, no formatting needed in the receiv
     Current medication                                table, reconciled across ALL documents
     To clarify                                        conflicts between documents
     Labs (abnormal)
+    Patient history                                   chronological, per document
     Contact / power of attorney
 
 Every fact keeps its source page [S. x], so the doctor can check it in the app.
 Labels are translated (de/en); the facts stay in the language of the documents.
-No patient history section: the ER does not need the full history, relevant past conditions are
-listed under Diagnoses (implants, directives under CAVE).
+v1 = assembled by rules. The "Patient history" section is where the language model
+writes a short narrative tomorrow (from the same confirmed facts only).
 """
 from __future__ import annotations
 
@@ -31,7 +32,9 @@ LABELS = {
            "cols": ["Wirkstoff", "Stärke", "Mo-Mi-Ab-Na", "Status", "Quelle"],
            "status": {"active": "", "new": "neu", "paused": "pausiert", "stopped": "abgesetzt"},
            "stopped": "Abgesetzt / pausiert:", "clarify": "Zu klären (Widersprüche zwischen Dokumenten):",
-           "warn": "Hinweise:", "labs": "Labor (auffällige Werte, neuester Wert):", "contact": "Kontakt / Vorsorgevollmacht:",
+           "warn": "Hinweise:", "labs": "Labor (auffällige Werte, neuester Wert):",
+           "history": "Anamnese / Verlauf (nach Datum):", "contact": "Kontakt / Vorsorgevollmacht:",
+           "history_ai": "Anamnese (KI-formuliert aus geprüften Fakten, ärztlich freigegeben):",
            "unconfirmed": "ENTWURF: Medikation noch nicht ärztlich bestätigt.",
            "confirmed": "Medikation ärztlich geprüft{by}.",
            "footer": "Erstellt mit Get Well OCR am {ts}. Alle Angaben mit Quellseite [S. x] im Original prüfbar."},
@@ -44,7 +47,9 @@ LABELS = {
            "cols": ["Drug", "Strength", "Mo-No-Ev-Ni", "Status", "Source"],
            "status": {"active": "", "new": "new", "paused": "paused", "stopped": "stopped"},
            "stopped": "Stopped / paused:", "clarify": "To clarify (conflicts between documents):",
-           "warn": "Warnings:", "labs": "Labs (abnormal, latest value):", "contact": "Contact / power of attorney:",
+           "warn": "Warnings:", "labs": "Labs (abnormal, latest value):",
+           "history": "Patient history (by date):", "contact": "Contact / power of attorney:",
+           "history_ai": "Patient history (AI-worded from checked facts, approved by a doctor):",
            "unconfirmed": "DRAFT: medication not yet confirmed by a doctor.",
            "confirmed": "Medication reviewed by a doctor{by}.",
            "footer": "Created with Get Well OCR on {ts}. Every item can be checked on its source page [p. x]."},
@@ -101,7 +106,7 @@ def _table(rows: list[list[str]]) -> list[str]:
 
 def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
               confirmed: bool = False, reviewer: str = "", resolved: list[int] | None = None,
-              show_sources: bool = False) -> str:
+              show_sources: bool = False, history_text: str | None = None) -> str:
     """Plain-text ER handover.
 
     meds         doctor-reviewed rows (defaults to the machine list)
@@ -181,6 +186,24 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
         out += [" ".join(x for x in ["-", l["name"], l["value"], l["unit"], l["flag"]] if x) +
                 (f" (Verlauf {l['trend']})" if l["trend"] and lang == "de" else
                  f" (trend {l['trend']})" if l["trend"] else "") + f" {_src(l['sources'], L)}" for l in flagged]
+
+    # --- history: per document, oldest first -----------------------------------------------
+    hist = []
+    for d in sorted(relevant, key=lambda d: d["date"] or "9999"):
+        pages = set(doc_pages[d["doc_id"]])
+        facts = [f"{x['text']}" for x in s["diagnoses"] if set(x["sources"]) & pages]
+        facts += [x["text"] for x in s.get("findings", []) if set(x["sources"]) & pages
+                  and not x["text"].startswith("Korrektur")]
+        facts += [x["text"] for x in s["cave"] if set(x["sources"]) & pages and "Antikoagulation" not in x["text"]]
+        facts = list(dict.fromkeys(facts))[:4]
+        if facts:
+            hist.append(f"- {_date(d['date'], L)} {T.get(d['type'], d['type'])}"
+                        f"{' (' + d['issuer'] + ')' if d.get('issuer') else ''}: " + "; ".join(facts) +
+                        f" {_src(d['pages'], L)}")
+    if history_text:                    # prose written by Mistral Large 3, accepted by the doctor
+        out += ["", L["history_ai"], history_text.strip()]
+    elif hist:
+        out += ["", L["history"], *hist]
 
     # --- contact ---------------------------------------------------------------------------
     if s["contacts"]:
