@@ -29,31 +29,39 @@ MED_STATUSES = ["active", "new", "paused", "stopped"]
 # ================================================================== sidebar: case + processing
 
 cases = store.list_cases()
-with st.sidebar:
-    st.markdown("### Fall")
-    labels = {c["id"]: f"{c['label']}  ·  {c['n_pages']} Seiten{'  · privat' if c['private'] else ''}" for c in cases}
-    ids = list(labels)
-    default = st.session_state.get("case_id")
-    case_id = st.selectbox("Fall auswählen", ids, format_func=labels.get,
-                           index=ids.index(default) if default in ids else 0) if ids else None
-    st.session_state.case_id = case_id
+st.session_state.setdefault("case_id", None)
 
-    with st.expander("➕ Neuer Fall (Fotos hochladen)", expanded=not ids):
-        with st.form("new_case", clear_on_submit=True):
-            label = st.text_input("Bezeichnung", placeholder="z. B. Notaufnahme Bett 4")
-            files = st.file_uploader("Fotos oder PDFs (mehrere möglich, Reihenfolge = Seitenreihenfolge)",
-                                     type=store.UPLOAD_TYPES, accept_multiple_files=True)
-            st.caption("Nur fiktive oder anonymisierte Dokumente verwenden.")
-            if st.form_submit_button("Fall anlegen", type="primary", use_container_width=True):
-                if not files:
-                    st.error("Bitte mindestens eine Datei auswählen.")
-                else:
-                    try:
-                        new_id = store.create_case(label or "Neuer Fall", [(f.name, f.getvalue()) for f in files])
-                        st.session_state.case_id = new_id
-                        st.rerun()
-                    except RuntimeError as e:
-                        st.error(str(e))
+
+def _open_case():
+    st.session_state.case_id = st.session_state.case_pick
+
+
+def _new_case():
+    st.session_state.case_id = None
+    st.session_state.case_pick = None
+
+
+def _process(case_dir_pages, case_out, engine, fresh):
+    bar = st.progress(0.0, text="Starte …")
+
+    def _progress(msg: str):
+        m = re.match(r"\[(\d+)/(\d+)\]", msg)
+        if m:
+            bar.progress(int(m.group(1)) / int(m.group(2)), text=f"Seite {m.group(1)} von {m.group(2)} gelesen")
+
+    with st.spinner("Seiten werden gelesen, sortiert und zusammengeführt …"):
+        process_case(case_dir_pages, case_out, engine, fresh, progress=_progress)
+    bar.empty()
+
+
+with st.sidebar:
+    st.button("＋ Neuer Fall", type="primary" if st.session_state.case_id else "secondary",
+              use_container_width=True, on_click=_new_case)
+    labels = {c["id"]: f"{c['label']}  ·  {c['n_pages']} Seiten" for c in cases}
+    ids = list(labels)
+    st.selectbox("Gespeicherten Fall öffnen", ids, format_func=labels.get, key="case_pick",
+                 index=ids.index(st.session_state.case_id) if st.session_state.case_id in ids else None,
+                 placeholder="Fall auswählen …", on_change=_open_case)
 
     st.markdown("### Verarbeitung")
     engine = st.radio("Texterkennung", ["tesseract", "azure"], horizontal=True,
@@ -64,31 +72,64 @@ with st.sidebar:
         st.warning("Azure-Zugangsdaten fehlen in .env.")
     fresh = st.toggle("Texterkennung neu ausführen", value=False,
                       help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).")
-    run = st.button("▶ Fall verarbeiten", type="primary", use_container_width=True, disabled=not case_id)
+    run = st.button("▶ Fall erneut verarbeiten", use_container_width=True,
+                    disabled=not st.session_state.case_id)
 
     st.divider()
     st.caption("Get Well OCR · Healthcare Hackathon Bayern 2026 · Demo mit fiktiven Daten")
 
+case_id = st.session_state.case_id
+
+# ================================================================== start screen: waits for an upload
+
 if not case_id:
-    st.title("Get Well OCR")
-    st.info("Noch kein Fall vorhanden. Links einen neuen Fall anlegen oder `python scripts\\generate_case.py` ausführen.")
+    html_block("""
+<div class="gw-hero">
+  <div class="gw-hero-title">Unterlagen einlesen</div>
+  <div class="gw-hero-sub">Fotos oder PDFs der mitgebrachten Unterlagen hochladen. Get Well OCR liest, sortiert
+  und prüft sie und erstellt die Übergabe für die Notaufnahme. Jede Angabe bleibt mit ihrer Quellseite verknüpft.</div>
+</div>""")
+    with st.form("upload", clear_on_submit=False, border=False):
+        files_up = st.file_uploader("Unterlagen", type=store.UPLOAD_TYPES, accept_multiple_files=True,
+                                    label_visibility="collapsed",
+                                    help="Mehrere Dateien möglich. Die Reihenfolge der Dateien ist die Seitenreihenfolge.")
+        c1, c2 = st.columns([3, 2], vertical_alignment="bottom")
+        label = c1.text_input("Bezeichnung (optional)", placeholder="z. B. Notaufnahme, Bett 4")
+        go = c2.form_submit_button("Unterlagen auswerten", type="primary", use_container_width=True)
+    if go:
+        if not files_up:
+            st.error("Bitte zuerst Fotos oder PDFs auswählen.")
+        else:
+            try:
+                new_id = store.create_case(label or "Neuer Fall", [(f.name, f.getvalue()) for f in files_up])
+            except RuntimeError as e:
+                st.error(str(e))
+                st.stop()
+            _process(store.pages_dir(store.PRIVATE_ROOT / new_id), store.out_dir(new_id), engine, False)
+            st.session_state.case_id = new_id
+            st.session_state.pop("case_pick", None)      # picker shows the new case on the next run
+            st.rerun()
+    html_block("""
+<div class="gw-steps">
+  <div><span class="n">1</span><b>Fotografieren</b><br>Alle Seiten mit dem Handy, in beliebiger Reihenfolge.
+       Unscharfe Seiten werden zum erneuten Fotografieren markiert.</div>
+  <div><span class="n">2</span><b>Prüfen</b><br>Medikation, Diagnosen und CAVE aus allen Dokumenten,
+       Widersprüche markiert. Die Ärztin bestätigt.</div>
+  <div><span class="n">3</span><b>Übergeben</b><br>Übergabetext zum Kopieren, FHIR, JSON und Medikationsplan
+       für Patient:innen in vier Sprachen.</div>
+</div>
+<div class="gw-muted" style="margin-top:1rem">Nur fiktive oder anonymisierte Dokumente verwenden.</div>""")
     st.stop()
 
-case = next(c for c in cases if c["id"] == case_id)
+case = next((c for c in cases if c["id"] == case_id), None)
+if case is None:                      # deleted or moved meanwhile
+    st.session_state.case_id = None
+    st.rerun()
 out = store.out_dir(case_id)
 files = store.page_files(case["dir"])
 
 if run:
-    bar = st.progress(0.0, text="Starte …")
-
-    def _progress(msg: str):
-        m = re.match(r"\[(\d+)/(\d+)\]", msg)
-        if m:
-            bar.progress(int(m.group(1)) / int(m.group(2)), text=f"Seite {m.group(1)} von {m.group(2)} gelesen")
-
-    with st.spinner("Seiten werden gelesen, sortiert und zusammengeführt …"):
-        process_case(case["pages_dir"], out, engine, fresh, progress=_progress)
-    bar.empty()
+    _process(case["pages_dir"], out, engine, fresh)
     st.session_state.pop(f"review_{case_id}", None)
     st.toast("Fall verarbeitet", icon="✅")
 
@@ -440,7 +481,8 @@ with tabs[5]:
         st.divider()
         if st.button("🗑 Fall und alle Daten löschen", key=f"del_{case_id}"):
             store.delete_case(case_id)
-            st.session_state.pop("case_id", None)
+            st.session_state.case_id = None
+            st.session_state.case_pick = None
             st.rerun()
 
 # ================================================================== tab: evaluation (test cases only)

@@ -130,6 +130,22 @@ code {font-family: "Atkinson Hyperlegible", monospace !important;}
 .gw-card h4 {margin:0 0 .45rem 0; font-size:1rem; color:var(--ink);}
 .gw-card ul {margin:0; padding-left:1.1rem;} .gw-card li {margin:.18rem 0; line-height:1.45; color:var(--ink);}
 .gw-card.gw-cavecard {border-color:#E7B7BF; background:var(--cave-bg);} .gw-card.gw-cavecard h4 {color:var(--cave);}
+/* start screen */
+.gw-hero {padding:1.4rem 0 1.1rem 0; max-width:780px;}
+.gw-hero-title {font-size:2.6rem; font-weight:700; color:var(--ink); line-height:1.1; letter-spacing:-0.01em;}
+.gw-hero-sub {font-size:1.12rem; color:var(--ink-2); margin-top:.7rem; line-height:1.55; max-width:64ch;}
+[data-testid="stFileUploaderDropzone"] {min-height:230px; border:2px dashed #9DB9C6 !important;
+  background:var(--action-bg) !important; border-radius:14px !important; display:flex; align-items:center;}
+[data-testid="stFileUploaderDropzone"]:hover {border-color:var(--action) !important;}
+[data-testid="stFileUploaderDropzoneInstructions"] span {font-size:1.05rem; color:var(--ink);}
+.gw-steps {display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:1.6rem; margin-top:1.8rem;
+           padding-top:1.3rem; border-top:1px solid var(--line); max-width:1100px;}
+.gw-steps > div {color:var(--ink-2); line-height:1.5; font-size:.95rem;}
+.gw-steps b {color:var(--ink); font-size:1.05rem;}
+.gw-steps .n {display:inline-flex; align-items:center; justify-content:center; width:1.7rem; height:1.7rem;
+              border-radius:50%; background:var(--ink); color:white; font-weight:700; font-size:.9rem;
+              margin-right:.55rem; vertical-align:middle;}
+@media (max-width: 800px) {.gw-steps {grid-template-columns:1fr;} .gw-hero-title {font-size:2rem;}}
 /* Streamlit widgets in our palette */
 .stTabs [data-baseweb="tab-list"] {gap:1.2rem; border-bottom:1px solid var(--line);}
 .stTabs [data-baseweb="tab"] {font-size:1rem; padding:.5rem 0;}

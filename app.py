@@ -9,8 +9,9 @@ from src.auth import require_login
 st.set_page_config(page_title="Get Well OCR", page_icon="🩺", layout="wide", initial_sidebar_state="expanded")
 require_login()   # every page goes through app.py, so this gates the whole app
 
+# One screen: the case workspace. The old single-page tool (views/single_page.py) is kept in the repo
+# but no longer shown; add it back here as a second st.Page if needed.
 nav = st.navigation([
-    st.Page("views/case_workspace.py", title="Fall-Arbeitsplatz", icon="🩺", default=True),
-    st.Page("views/single_page.py", title="Einzelne Seite", icon="📄"),
-])
+    st.Page("views/case_workspace.py", title="Get Well OCR", icon="🩺", default=True),
+], position="hidden")
 nav.run()
