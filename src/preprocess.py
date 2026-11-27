@@ -8,7 +8,154 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-ALL_STEPS = ("gray", "orient", "flatten", "denoise", "contrast", "upscale", "deskew")
+ALL_STEPS = ("gray", "page", "orient", "flatten", "denoise", "contrast", "upscale", "deskew")
+
+
+# ------------------------------------------------------------------ page detection (phone photos)
+# A phone photo shows the sheet plus table, hands, other papers. Find the sheet's four corners,
+# cut it out and straighten the perspective ("scan" look). If no clear sheet is found, the photo
+# is left untouched: a wrong crop would cut off text, which is worse than no crop.
+
+PAGE_MIN_AREA = 0.25      # sheet must cover at least 25 % of the photo
+PAGE_FULL_FRAME = 0.92    # sheet already fills the photo: nothing to crop
+PAGE_DETECT_SIZE = 1000   # detection runs on a copy this long (fast, ignores small text)
+
+
+def _order_corners(pts: np.ndarray) -> np.ndarray:
+    """top-left, top-right, bottom-right, bottom-left"""
+    pts = pts.reshape(4, 2).astype(np.float32)
+    s, d = pts.sum(axis=1), np.diff(pts, axis=1).ravel()
+    return np.array([pts[np.argmin(s)], pts[np.argmin(d)], pts[np.argmax(s)], pts[np.argmax(d)]],
+                    dtype=np.float32)
+
+
+def _quad_ok(quad: np.ndarray, img_area: float) -> bool:
+    if quad is None or len(quad) != 4 or not cv2.isContourConvex(quad.astype(np.int32)):
+        return False
+    area = cv2.contourArea(quad.astype(np.float32))
+    if area < PAGE_MIN_AREA * img_area:
+        return False
+    tl, tr, br, bl = _order_corners(quad)
+    w = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
+    h = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
+    ratio = max(w, h) / max(min(w, h), 1)
+    return ratio <= 3.0                       # A4 is 1.41; receipts are longer, but not 5:1
+
+
+def _best_quad(contours, img_area: float):
+    for c in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
+        peri = cv2.arcLength(c, True)
+        for eps in (0.02, 0.03, 0.05):        # corners hidden by fingers/shadows need a looser fit
+            approx = cv2.approxPolyDP(c, eps * peri, True)
+            if len(approx) == 4 and _quad_ok(approx, img_area):
+                return approx.reshape(4, 2)
+    return None
+
+
+def _side_contrast(lab: np.ndarray, quad: np.ndarray) -> float:
+    """Weakest of the four sides: how different is the photo just inside vs. just outside the side.
+
+    A real sheet edge has paper on one side and table on the other, on all four sides. A wrong
+    quad (e.g. a shadow line across the page) has paper on both sides of at least one side.
+    Sides that run along the photo border (outside is off-photo) are not judged.
+    """
+    h, w = lab.shape[:2]
+    centre = quad.mean(axis=0)
+    d = 0.015 * max(h, w)
+    weakest = None
+    for i in range(4):
+        p, q = quad[i], quad[(i + 1) % 4]
+        diffs = []
+        for t in np.linspace(0.1, 0.9, 15):
+            pt = p + t * (q - p)
+            n = np.array([-(q - p)[1], (q - p)[0]], dtype=np.float32)
+            n /= max(np.linalg.norm(n), 1e-6)
+            if np.dot(centre - pt, n) < 0:
+                n = -n                          # n points into the sheet
+            a, b = pt + n * d, pt - n * d
+            if not (0 <= b[0] < w and 0 <= b[1] < h):
+                continue
+            a = np.clip(a, 0, [w - 1, h - 1]).astype(int)
+            b = b.astype(int)
+            diffs.append(float(np.linalg.norm(lab[a[1], a[0]].astype(float) - lab[b[1], b[0]].astype(float))))
+        if len(diffs) >= 5:
+            med = float(np.median(diffs))
+            weakest = med if weakest is None else min(weakest, med)
+    return weakest if weakest is not None else 0.0
+
+
+PAGE_MIN_CONTRAST = 18    # weakest side must differ this much (Lab units) between inside and outside
+
+
+def find_page(img: np.ndarray):
+    """Four corners of the sheet in the photo (in full-size pixels) and the detector used, or (None, None).
+
+    Several detectors propose a four-cornered outline on a small copy (edges at two sensitivities,
+    bright paper area by brightness and by low colour). A proposal only counts if all four sides
+    are real edges (paper inside, something else outside). Of those, the largest wins.
+    """
+    h, w = img.shape[:2]
+    scale = min(PAGE_DETECT_SIZE / max(h, w), 1.0)
+    small = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else img
+    if small.ndim == 2:
+        small = cv2.cvtColor(small, cv2.COLOR_GRAY2BGR)
+    area = small.shape[0] * small.shape[1]
+    gray = to_gray(small)
+    # text would make many small edges: close it into the paper, keep only the outline
+    solid = cv2.morphologyEx(cv2.GaussianBlur(gray, (5, 5), 0), cv2.MORPH_CLOSE,
+                             np.ones((9, 9), np.uint8), iterations=2)
+    lab = cv2.cvtColor(cv2.GaussianBlur(small, (9, 9), 0), cv2.COLOR_BGR2LAB)
+
+    masks = []
+    for lo, hi in ((20, 60), (50, 150)):
+        e = cv2.dilate(cv2.Canny(solid, lo, hi), np.ones((3, 3), np.uint8), iterations=2)
+        masks.append(("edges", e))
+    masks.append(("brightness", cv2.threshold(solid, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]))
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    low_colour = ((hsv[..., 1] < 50) & (solid > cv2.threshold(solid, 0, 255, cv2.THRESH_OTSU)[0] * 0.8))
+    masks.append(("colour", low_colour.astype(np.uint8) * 255))
+
+    best = None
+    for name, m in masks:
+        if name != "edges":
+            m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8), iterations=2)
+            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+        cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        quad = _best_quad(cnts, area)
+        if quad is None and cnts and name != "edges":   # curled corners: the min-area box
+            big = max(cnts, key=cv2.contourArea)
+            box = cv2.boxPoints(cv2.minAreaRect(big))
+            quad = box if _quad_ok(box, area) else None
+        if quad is None:
+            continue
+        quad = _order_corners(quad)
+        if _side_contrast(lab, quad) < PAGE_MIN_CONTRAST:
+            continue
+        size = cv2.contourArea(quad)
+        if best is None or size > best[0]:
+            best = (size, quad, name)
+    if best is None:
+        return None, None
+    return best[1] / scale, best[2]
+
+
+def crop_to_page(img: np.ndarray) -> tuple[np.ndarray, str]:
+    """Cut the sheet out of a phone photo and straighten it. Returns (image, log text)."""
+    corners, method = find_page(img)
+    if corners is None:
+        return img, "page edges not found (photo kept as is)"
+    h, w = img.shape[:2]
+    share = cv2.contourArea(corners) / float(h * w)
+    if share >= PAGE_FULL_FRAME:
+        return img, f"page fills the photo ({share:.0%}), no crop"
+    tl, tr, br, bl = corners
+    out_w = int(max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl)))
+    out_h = int(max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr)))
+    target = np.array([[0, 0], [out_w - 1, 0], [out_w - 1, out_h - 1], [0, out_h - 1]], dtype=np.float32)
+    m = cv2.getPerspectiveTransform(corners, target)
+    warped = cv2.warpPerspective(img, m, (out_w, out_h), flags=cv2.INTER_CUBIC,
+                                 borderMode=cv2.BORDER_REPLICATE)
+    return warped, f"page cropped + straightened ({method}, {share:.0%} of photo)"
 
 
 def load_image(path: str | Path, page: int = 0, dpi: int = 300) -> np.ndarray:
@@ -149,6 +296,9 @@ def preprocess(img: np.ndarray, steps=ALL_STEPS) -> tuple[np.ndarray, list[str]]
     CLAHE re-amplified the leftover noise.
     """
     log = []
+    if "page" in steps:                      # on the colour photo: paper vs. table is easiest in colour
+        img, msg = crop_to_page(img)
+        log.append(msg)
     out = to_gray(img)
     log.append("gray")
     sigma = estimate_noise(out)
