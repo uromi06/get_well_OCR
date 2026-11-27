@@ -18,6 +18,8 @@ const docChip = (t) => `<span class="chip" style="background:${esc(S.meta?.doc_t
 const statusLabel = (s) => S.meta?.statuses?.[s] || s;
 
 const ICON = {
+  eye: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  eyeOff: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>`,
   doc: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>`,
   docSmall: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`,
   search: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>`,
@@ -164,12 +166,23 @@ function viewLogin() {
       <div class="brand"><img src="/icons/icon-192.png" alt=""><div><div class="eyebrow">Get Well OCR</div><h1 class="title">Anmelden</h1></div></div>
       ${notSet ? `<div class="note cave">${ICON.info}<span>Login ist auf dem Server nicht eingerichtet (APP_USERNAME / APP_PASSWORD).</span></div>` : ""}
       <label class="field">Benutzername<input type="text" name="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
-      <label class="field">Passwort<input type="password" name="p" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+      <div class="field"><label for="pw">Passwort</label>
+        <div class="pw-wrap"><input type="password" id="pw" name="p" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          <button type="button" class="pw-toggle" id="pwtoggle" aria-label="Passwort anzeigen" aria-pressed="false">${ICON.eye}</button></div></div>
       <button class="cta" type="submit">Anmelden</button>
       <p class="muted" style="text-align:center">Nur fiktive oder anonymisierte Dokumente verwenden.</p>
     </form>`;
   const f = document.getElementById("f");
   f.u.focus();
+  const toggle = document.getElementById("pwtoggle");
+  toggle.onclick = () => {
+    const show = f.p.type === "password";
+    f.p.type = show ? "text" : "password";
+    toggle.innerHTML = show ? ICON.eyeOff : ICON.eye;
+    toggle.setAttribute("aria-pressed", String(show));
+    toggle.setAttribute("aria-label", show ? "Passwort verbergen" : "Passwort anzeigen");
+    f.p.focus();
+  };
   f.onsubmit = async (ev) => {
     ev.preventDefault();
     const btn = f.querySelector("button");
