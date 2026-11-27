@@ -9,12 +9,13 @@ What it does, every time (fast when nothing changed):
   2. Creates .venv (or rebuilds it if it is broken or from another machine).
   3. Installs requirements.txt, but only when the file changed since the last install.
   4. Makes sure Tesseract with German + English + orientation data is available
-     (installs it with brew / apt / dnf / winget, or downloads the language files).
+     (installs it with brew / apt / dnf / winget / choco, or downloads the language files).
   5. Creates .env from .env.example if it does not exist yet.
   6. Starts Streamlit and opens the browser.
 
 Options:
   --setup-only     do steps 1-5, do not start the app
+  --self-test      do steps 1-5, then check imports and German OCR on a test page
   --port N         port for the app (default 8501, or the next free one)
   --no-browser     do not open the browser
   Anything else is passed on to "streamlit run app.py".
@@ -130,6 +131,8 @@ def install_python():
     elif IS_WIN and has("winget"):
         run(["winget", "install", "-e", "--id", "Python.Python.3.12",
              "--accept-package-agreements", "--accept-source-agreements"], check=False)
+    elif IS_WIN and has("choco"):
+        run(["choco", "install", "-y", "python312"], check=False)
     elif has("apt-get"):
         run(["sudo", "apt-get", "update"], check=False)
         run(["sudo", "apt-get", "install", "-y", "python3", "python3-venv", "python3-pip"])
@@ -223,10 +226,13 @@ def install_tesseract():
             die("Install Homebrew first (https://brew.sh), then run this again.")
         run(["brew", "install", "tesseract", "tesseract-lang"])
     elif IS_WIN:
-        if not has("winget"):
+        if has("winget"):
+            run(["winget", "install", "-e", "--id", "UB-Mannheim.TesseractOCR",
+                 "--accept-package-agreements", "--accept-source-agreements"], check=False)
+        if not find_tesseract() and has("choco"):
+            run(["choco", "install", "-y", "tesseract"], check=False)
+        if not find_tesseract():
             die("Install Tesseract from https://github.com/UB-Mannheim/tesseract/wiki, then run this again.")
-        run(["winget", "install", "-e", "--id", "UB-Mannheim.TesseractOCR",
-             "--accept-package-agreements", "--accept-source-agreements"], check=False)
     elif has("apt-get"):
         run(["sudo", "apt-get", "update"], check=False)
         run(["sudo", "apt-get", "install", "-y", "tesseract-ocr", "tesseract-ocr-deu", "tesseract-ocr-eng"])
@@ -336,12 +342,39 @@ def start_app(vpy, env, port, open_browser, extra):
             return 130
 
 
+SELF_TEST = r"""
+import sys
+from pathlib import Path
+sys.path.insert(0, ".")
+import pytesseract
+from PIL import Image
+import streamlit, cv2, pypdfium2, sentence_transformers   # noqa: F401  (imports work)
+from src import config
+langs = set(pytesseract.get_languages(config=""))
+missing = {"deu", "eng", "osd"} - langs
+assert not missing, "Tesseract language data missing: %s" % missing
+page = sorted(Path("data/cases/case01/pages_clean").glob("*"))[0]
+text = pytesseract.image_to_string(Image.open(page), lang=config.TESSERACT_LANG)
+assert len(text.strip()) > 50, "OCR returned almost nothing for %s" % page
+print("self-test OK: Tesseract %s, %d characters read from %s" % (pytesseract.get_tesseract_version(), len(text), page.name))
+"""
+
+
+def self_test(vpy, env):
+    say("Self-test: imports + German OCR on a test page ...")
+    res = subprocess.run([str(vpy), "-c", SELF_TEST], cwd=str(ROOT), env=env)
+    if res.returncode != 0:
+        die("Self-test failed, see above.")
+
+
 def parse_args(argv):
-    opts = {"setup_only": False, "port": None, "browser": True, "extra": []}
+    opts = {"self_test": False, "setup_only": False, "port": None, "browser": True, "extra": []}
     it = iter(argv)
     for a in it:
         if a == "--setup-only":
             opts["setup_only"] = True
+        elif a == "--self-test":
+            opts["self_test"] = opts["setup_only"] = True
         elif a == "--no-browser":
             opts["browser"] = False
         elif a == "--port":
@@ -362,6 +395,8 @@ def main():
     ensure_packages(vpy)
     env = ensure_tesseract(dict(os.environ))
     ensure_dotenv()
+    if opts["self_test"]:
+        self_test(vpy, env)
     if opts["setup_only"]:
         say("Setup complete. Start the app with ./start.sh (macOS/Linux) or start.bat (Windows).")
         return 0
