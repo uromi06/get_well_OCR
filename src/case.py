@@ -221,7 +221,7 @@ ANTICOAGULANTS = {"Apixaban", "Rivaroxaban", "Edoxaban", "Dabigatran", "Phenproc
 STATUS_WORDS = {"stopped": ["abgesetzt", "beendet", "gestoppt", "abgeseizt"], "paused": ["pausiert"],
                 "new": ["angesetzt", "begonnen", "neu"]}
 SWITCH = re.compile(r"(?:Umstellung|umgestellt)\s+von\s+(\w+)\s+auf\s+(\w+)", re.IGNORECASE)
-UNITS = {"mmol/l", "mg/dl", "ml/min", "ml/min/1,73m2", "pg/ml", "g/dl", "%", "/nl", "mg/l", "µmol/l", "ng/ml", "mu/l"}
+UNITS = {"mmol/l", "mg/dl", "ml/min", "ml/min/1,73m2", "ml/min/1,73m²", "pg/ml", "g/dl", "%", "/nl", "mg/l", "µmol/l", "ng/ml", "mu/l"}
 LVEF = re.compile(r"LVEF[^\d%]{0,30}?(\d{2})\s*%")
 LAB_NAMES = ["Natrium", "Kalium", "Kreatinin", "eGFR", "Harnstoff", "Hämoglobin", "Leukozyten", "CRP",
              "NT-proBNP", "HbA1c", "INR", "TSH"]
@@ -229,8 +229,9 @@ LAB_LINE = re.compile(r"^\W*(" + "|".join(re.escape(n) for n in LAB_NAMES) + r")
 WORD = re.compile(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]+")
 
 
-def find_drugs(line: str) -> list[tuple[str, int]]:
-    """Known drug names in a line (OCR-tolerant), with their character position."""
+def find_drugs(line: str, every: bool = False) -> list[tuple[str, int]]:
+    """Known drug names in a line (OCR-tolerant), with their character position.
+    every=True keeps repeated mentions of the same drug (used to cut a drug's text segment)."""
     found, taken = [], []
     for m in MULTI_WORD.finditer(line):                # "Insulin lispro", "Sacubitril/Valsartan"
         found.append((DRUG_LOWER[m.group(0).lower()], m.start()))
@@ -248,6 +249,8 @@ def find_drugs(line: str) -> list[tuple[str, int]]:
             best = process.extractOne(tok, SINGLE_WORD, scorer=fuzz.ratio, score_cutoff=85)
             if best:
                 found.append((DRUG_LOWER[best[0]], m.start()))
+    if every:
+        return sorted(found, key=lambda x: x[1])
     out, seen = [], set()
     for name, pos in sorted(found, key=lambda x: x[1]):   # "Enoxaparin (Clexane®)" -> one mention
         if name not in seen:
@@ -341,8 +344,13 @@ def extract_page(p: dict) -> dict:
         # medications (table rows and prose); lines of a correction note were handled above
         drugs = find_drugs(text) if idx not in consumed else []
         switched = {m.group(1).lower() for m in SWITCH.finditer(text)}
+        # a drug's text ends where the next drug is named, even a repeat: in a long paragraph
+        # "... auf Apixaban. ... Phenprocoumon wurde beendet; Apixaban begonnen" the word
+        # "beendet" belongs to Phenprocoumon, not to the first Apixaban
+        mentions = find_drugs(text, every=True) if drugs else []
         for i, (drug, pos) in enumerate(drugs):
-            end = drugs[i + 1][1] if i + 1 < len(drugs) else len(text)
+            end = next((p for n, p in mentions if p > pos and not (n == drug and p - pos <= 30)),
+                       len(text))                    # same drug right after = brand "(Marcumar)", not a new mention
             segment = text[pos:end]
             segment = re.sub(r"^(\S+)\s*\([^)]{1,30}\)", r"\1", segment)   # "Enoxaparin (Clexane®) 40 mg"
             window = 70 if "|" in segment else 35     # table rows: dose sits a few columns further right
@@ -398,6 +406,8 @@ def extract_page(p: dict) -> dict:
                 label = previous.strip(" -·:;,()|")
             label = re.sub(r"^(\d+\.\s*)?((Haupt|Neben)?[Dd]iagnosen?[^:]*:\s*)?", "", label)
             label = re.sub(r"\(\s*[1l|]\d{2}(\.\d{1,2})?\s*\)", "", label).strip(" -·:;,()|")
+            if label.count("(") > label.count(")"):  # "(HFmrEF, LVEF 40 %)" lost its ")" to the strip
+                label += ")"
             prev = m.end()
             if len(label) >= 4 and doc_type != "lab_report":
                 facts["diagnoses"].append({"text": label, "icd10": m.group(1), **src})
@@ -412,6 +422,9 @@ def extract_page(p: dict) -> dict:
             if m:
                 flag = re.search(r"\b([HL])\s*$", text)
                 unit = (m.group(3) or "").strip("|")
+                cells = [c.strip() for c in text.split("|")]
+                if not unit and len(cells) > 2:          # Markdown table row: "Kalium | 5,3 | mmol/l | ..."
+                    unit = cells[2]
                 facts["labs"].append({"name": m.group(1), "value": m.group(2),
                                       "unit": unit if unit.lower() in UNITS else "",
                                       "flag": flag.group(1) if flag else "", **src})
@@ -529,7 +542,7 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
                          "sources": sorted({*next(m for m in current if m['name'] == 'Metformin')['sources'],
                                             *next(l for l in lab_out if l['name'] == 'eGFR')['sources']})})
     if lab_val.get("Kalium", 0) > 5.0 and active & {"Ramipril", "Lisinopril", "Enalapril", "Candesartan", "Valsartan", "Spironolacton"}:
-        warnings.append({"text": f"Kalium {lab_val['Kalium']:.1f} mmol/l unter RAAS-Hemmer",
+        warnings.append({"text": f"Kalium {lab_val['Kalium']:.1f} mmol/l unter RAAS-Hemmer".replace(".", ",", 1),
                          "sources": next(l for l in lab_out if l['name'] == 'Kalium')['sources']})
 
     # --- CAVE: de-duplicate, keep all source pages
@@ -561,11 +574,24 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
         key = d["icd10"] or re.sub(r"\W+", "", d["text"].lower())[:40]
         if key not in diags:
             diags[key] = {"text": d["text"], "icd10": d["icd10"], "date": d["date"], "sources": set(), "details": []}
+        else:   # same ICD code, older and more specific wording ("HFmrEF, LVEF 40 %"): keep it as a detail
+            norm = lambda t: re.sub(r"\W+", "", t.lower())
+            older, kept = norm(d["text"]), norm(diags[key]["text"])
+            if (older and older not in kept and kept not in older
+                    and all(norm(x) != older for x in diags[key]["details"])):
+                diags[key]["details"].append(d["text"])
         diags[key]["sources"].add(d["page"])
         diags[key]["ai_corrected"] = diags[key].get("ai_corrected", False) or bool(d.get("ai_corrected"))
         for det in d.get("details", []):
             if det not in diags[key]["details"]:
                 diags[key]["details"].append(det)
+
+    # a diagnosis without ICD code that repeats one already shown (same first words) is the same one
+    def _head(t):
+        return re.sub(r"\W+", "", t.lower())[:45]
+    shown = {_head(t) for k, d in diags.items() if d["icd10"] for t in [d["text"], *d["details"]]}
+    for k in [k for k, d in diags.items() if not d["icd10"] and _head(d["text"]) in shown]:
+        del diags[k]
 
     return {
         "cave": cave_out,
