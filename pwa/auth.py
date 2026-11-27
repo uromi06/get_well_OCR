@@ -35,8 +35,11 @@ def check_login(user: str, pw: str) -> bool:
     creds = credentials()
     if creds is None:
         return False
-    ok_user = hmac.compare_digest(user.encode("utf-8"), creds[0].encode("utf-8"))
-    ok_pw = hmac.compare_digest(pw.encode("utf-8"), creds[1].encode("utf-8"))
+    # Phone keyboards capitalise the first letter and add a space after a suggestion: the user name is
+    # compared without case, both without surrounding spaces (the stored values are stripped too).
+    # The password stays case-sensitive.
+    ok_user = hmac.compare_digest(user.strip().casefold().encode("utf-8"), creds[0].casefold().encode("utf-8"))
+    ok_pw = hmac.compare_digest(pw.strip().encode("utf-8"), creds[1].encode("utf-8"))
     return ok_user and ok_pw
 
 
