@@ -4,6 +4,11 @@
 # App interface
 streamlit>=1.30
 
+# HTTP API (api.py)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
 # Images and PDFs
 opencv-python-headless>=4.8
 pillow>=10.0
