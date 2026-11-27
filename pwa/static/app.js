@@ -185,7 +185,7 @@ function viewLogin() {
   };
   f.onsubmit = async (ev) => {
     ev.preventDefault();
-    const btn = f.querySelector("button");
+    const btn = f.querySelector('button[type="submit"]');
     btn.disabled = true;
     try {
       S.user = (await api("/api/login", { method: "POST", json: { username: f.u.value, password: f.p.value } })).user;

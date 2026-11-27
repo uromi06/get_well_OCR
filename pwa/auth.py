@@ -43,6 +43,17 @@ def check_login(user: str, pw: str) -> bool:
     return ok_user and ok_pw
 
 
+def mismatch_report(user: str, pw: str) -> str:
+    """Why a login failed, for the server log. Lengths and yes/no only, never the typed or stored values."""
+    creds = credentials()
+    if creds is None:
+        return "login not configured"
+    u, p = user.strip(), pw.strip()
+    return (f"user_ok={u.casefold() == creds[0].casefold()} user_len={len(u)}/{len(creds[0])} "
+            f"pw_ok={p == creds[1]} pw_len={len(p)}/{len(creds[1])} pw_ok_ignoring_case={p.casefold() == creds[1].casefold()} "
+            f"pw_non_ascii={any(ord(c) > 127 for c in p)} pw_inner_space={' ' in p}")
+
+
 def _sign(payload: str) -> str:
     return hmac.new(_KEY, payload.encode("utf-8"), hashlib.sha256).hexdigest()
 

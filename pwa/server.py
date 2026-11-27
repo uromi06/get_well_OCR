@@ -68,6 +68,7 @@ def login(body: Login, request: Request, response: Response) -> dict:
     if auth.credentials() is None:
         raise HTTPException(503, "Login ist nicht eingerichtet: APP_USERNAME und APP_PASSWORD fehlen auf dem Server.")
     if not auth.check_login(body.username, body.password):
+        print(f"[login] failed: {auth.mismatch_report(body.username, body.password)}", flush=True)
         time.sleep(0.7)                       # slows down guessing
         raise HTTPException(401, "Benutzername oder Passwort falsch.")
     response.set_cookie(auth.COOKIE, auth.make_token(body.username), max_age=auth.MAX_AGE, httponly=True,
