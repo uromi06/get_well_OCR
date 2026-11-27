@@ -107,9 +107,21 @@ def read_azure(img: np.ndarray, use_cache: bool = True) -> list[OCRLine]:
     return out
 
 
+# ---------- Mistral Document AI (cloud, EU region, hackathon endpoint) ----------
+
+def read_mistral(img: np.ndarray) -> list[OCRLine]:
+    """Mistral OCR returns Markdown without positions or confidences.
+
+    So: no highlight boxes on the page for this engine, and a fixed confidence
+    (the page-quality gate then relies on the sharpness check).
+    """
+    from .mistral import markdown_to_lines, ocr_markdown
+    return [OCRLine(text=t, bbox=None, confidence=0.95) for t in markdown_to_lines(ocr_markdown(img))]
+
+
 # ---------- single entry point ----------
 
-ENGINES = {"tesseract": read_tesseract, "azure": read_azure}
+ENGINES = {"tesseract": read_tesseract, "mistral": read_mistral, "azure": read_azure}
 
 
 def read_text(img: np.ndarray, engine: str | None = None) -> list[OCRLine]:

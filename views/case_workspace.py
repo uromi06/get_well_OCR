@@ -20,8 +20,9 @@ from src.evaluate import score_case
 from src.report import er_report
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
 from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, cave_panel, chip, cleaned_page,
-                              doc_chip, esc, highlight, html_block, inject_css, legend, med_table, ocr_cache, section,
-                              sources, strip, thumbnail)
+                              doc_chip, esc, highlight, html_block, inject_css, legend, logo, med_table, ocr_cache,
+                              section, sources, strip, thumbnail, busy_box)
+from src import mistral
 
 inject_css()
 MED_STATUSES = ["active", "new", "paused", "stopped"]
@@ -42,6 +43,8 @@ def _new_case():
 
 
 def _process(case_dir_pages, case_out, engine, fresh):
+    anim = st.empty()
+    anim.markdown(busy_box("Unterlagen werden gelesen, sortiert und abgeglichen …"), unsafe_allow_html=True)
     bar = st.progress(0.0, text="Starte …")
 
     def _progress(msg: str):
@@ -49,34 +52,59 @@ def _process(case_dir_pages, case_out, engine, fresh):
         if m:
             bar.progress(int(m.group(1)) / int(m.group(2)), text=f"Seite {m.group(1)} von {m.group(2)} gelesen")
 
-    with st.spinner("Seiten werden gelesen, sortiert und zusammengeführt …"):
+    try:
         process_case(case_dir_pages, case_out, engine, fresh, progress=_progress)
+    except mistral.MistralError as e:
+        anim.empty()
+        bar.empty()
+        st.error(f"Mistral OCR nicht erreichbar: {e}. Bitte Tesseract wählen oder die Zugangsdaten in .env prüfen.")
+        st.stop()
+    anim.empty()
     bar.empty()
 
 
 with st.sidebar:
     st.button("＋ Neuer Fall", type="primary" if st.session_state.case_id else "secondary",
               use_container_width=True, on_click=_new_case)
-    labels = {c["id"]: f"{c['label']}  ·  {c['n_pages']} Seiten" for c in cases}
+    def _label(c):
+        when = ""
+        if c.get("created_at"):
+            when = datetime.fromisoformat(c["created_at"]).strftime("%d.%m. %H:%M") + "  ·  "
+        return f"{c['label']}  ·  {when}{c['n_pages']} S."
+    labels = {c["id"]: _label(c) for c in cases}
     ids = list(labels)
     st.selectbox("Gespeicherten Fall öffnen", ids, format_func=labels.get, key="case_pick",
                  index=ids.index(st.session_state.case_id) if st.session_state.case_id in ids else None,
                  placeholder="Fall auswählen …", on_change=_open_case)
 
     st.markdown("### Verarbeitung")
-    engine = st.radio("Texterkennung", ["tesseract", "azure"], horizontal=True,
-                      index=0 if config.OCR_ENGINE == "tesseract" else 1,
-                      help="Tesseract läuft offline. Azure Document Intelligence (EU-Region) liest Handschrift "
-                           "und Tabellen besser.")
-    if engine == "azure" and not (config.AZURE_DI_ENDPOINT and config.AZURE_DI_KEY):
-        st.warning("Azure-Zugangsdaten fehlen in .env.")
+    engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
+                      index=1 if config.OCR_ENGINE == "mistral" else 0,
+                      format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
+                      help="Tesseract läuft offline auf diesem Rechner. Mistral Document AI (Azure, EU-Region "
+                           "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
+    if engine == "mistral" and not mistral.ocr_available():
+        st.warning("Mistral OCR: MISTRAL_OCR_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
     fresh = st.toggle("Texterkennung neu ausführen", value=False,
                       help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).")
     run = st.button("▶ Fall erneut verarbeiten", use_container_width=True,
                     disabled=not st.session_state.case_id)
 
+    private = [c for c in cases if c["private"]]
+    with st.expander(f"Verlauf löschen ({len(private)})"):
+        st.caption("Löscht alle hochgeladenen Fälle mit Fotos, Texterkennung und Prüfungen. Testfälle bleiben.")
+        sure = st.checkbox("Ja, endgültig löschen", key="del_all_ok")
+        if st.button("Alle hochgeladenen Fälle löschen", disabled=not (sure and private), use_container_width=True):
+            n = store.delete_all_private()
+            if st.session_state.case_id not in {c["id"] for c in cases if not c["private"]}:
+                st.session_state.case_id = None
+            st.session_state.pop("case_pick", None)
+            st.session_state.pop("del_all_ok", None)
+            st.toast(f"{n} Fälle gelöscht", icon="🗑")
+            st.rerun()
+
     st.divider()
-    st.caption("Get Well OCR · Healthcare Hackathon Bayern 2026 · Demo mit fiktiven Daten")
+    st.caption("Healthcare Hackathon Bayern 2026 · Demo mit fiktiven Daten")
 
 case_id = st.session_state.case_id
 
@@ -85,7 +113,7 @@ case_id = st.session_state.case_id
 if not case_id:
     html_block("""
 <div class="gw-hero">
-  <div class="gw-hero-title">Unterlagen einlesen</div>
+  <div class="gw-hero-row">""" + logo(84) + """<div class="gw-hero-title">Unterlagen einlesen</div></div>
   <div class="gw-hero-sub">Fotos oder PDFs der mitgebrachten Unterlagen hochladen. Get Well OCR liest, sortiert
   und prüft sie und erstellt die Übergabe für die Notaufnahme. Jede Angabe bleibt mit ihrer Quellseite verknüpft.</div>
 </div>""")
@@ -310,6 +338,8 @@ with tabs[1]:
         view = st.segmented_control("Ansicht", ["Foto", "Aufbereitet + Markierungen"],
                                     default="Aufbereitet + Markierungen" if p["status"] == "done" else "Foto",
                                     key=f"view_{case_id}")
+        if result["engine"] == "mistral":
+            st.caption("Mistral OCR liefert keine Positionen: Fundstellen sind rechts als Text aufgelistet.")
         if view == "Foto" or not ocr:
             st.image(str(f), use_container_width=True)
         else:
@@ -446,11 +476,52 @@ with tabs[5]:
                        "status": r["status"], "form": None, "as_needed": False,
                        "sources": [int(s) for s in re.findall(r"\d+", r["sources"])]} for r in review["meds"]]
     confirmed_summary = {**summary, "medications": confirmed_meds}
+
+    # ---- patient history as prose, written by Mistral Large 3 from the confirmed facts only
+    st.markdown("##### Anamnese als Fließtext (Mistral Large 3)")
+    hist = review.get("history_ai")
+    if not mistral.chat_available():
+        st.caption("Mistral Large 3 ist nicht eingerichtet (MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env). "
+                   "Der Übergabetext enthält dann die Anamnese als Liste nach Datum.")
+    else:
+        st.caption("Das Modell bekommt nur die geprüften Fakten dieses Falls, keine Fotos und keinen Rohtext. "
+                   "Jede Zahl und jedes Datum im Ergebnis wird gegen die Fakten geprüft.")
+        if st.button("✨ Anamnese mit Mistral formulieren", disabled=not ready, key=f"ai_{case_id}",
+                     help="Erst möglich, wenn alle Medikamente bestätigt sind."):
+            from src.history import write_history
+            with st.spinner("Mistral Large 3 formuliert …"):
+                try:
+                    h = write_history(result, confirmed_meds)
+                    review["history_ai"] = {"text": h["text"], "unsupported": h["unsupported"], "accepted": False}
+                    _save_review()
+                    st.rerun()
+                except mistral.MistralError as e:
+                    st.error(f"Mistral nicht erreichbar: {e}")
+        if hist:
+            from src.history import history_facts, unsupported_numbers
+            new_text = st.text_area("Text (bearbeitbar)", hist["text"], height=170, key=f"aitext_{case_id}")
+            if new_text != hist["text"]:
+                hist.update(text=new_text, accepted=False,
+                            unsupported=unsupported_numbers(new_text, history_facts(result, confirmed_meds)))
+                _save_review()
+            if hist["unsupported"]:
+                st.warning("Nicht in den geprüften Fakten belegt: " + ", ".join(hist["unsupported"]) +
+                           ". Bitte korrigieren oder entfernen.")
+            else:
+                st.success("Alle Zahlen und Daten im Text sind in den geprüften Fakten belegt.")
+            accepted = st.checkbox("Text geprüft und für den Übergabetext freigegeben",
+                                   value=bool(hist.get("accepted")), key=f"aiok_{case_id}")
+            if accepted != bool(hist.get("accepted")):
+                hist["accepted"] = accepted
+                _save_review()
+                st.rerun()
+    history_text = hist["text"] if hist and hist.get("accepted") else None
+
     rep_lang = st.segmented_control("Sprache des Übergabetexts", ["de", "en"], default="de",
                                     format_func={"de": "Deutsch", "en": "English"}.get, key=f"rl_{case_id}") or "de"
     with_src = st.toggle("Quellseiten [S. x] im Text anzeigen", value=False, key=f"src_{case_id}")
     er_text = er_report(result, confirmed_meds, rep_lang, confirmed=ready, reviewer=review.get("reviewer", ""),
-                        resolved=review["conflicts_ok"], show_sources=with_src)
+                        resolved=review["conflicts_ok"], show_sources=with_src, history_text=history_text)
     stamp = f"{datetime.now():%Y%m%d-%H%M}"
 
     st.markdown("##### Übergabetext für das Krankenhaussystem")

@@ -45,9 +45,10 @@ CSS = """
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap");
 :root {
-  --paper:#FAFBFC; --panel:#F1F4F7; --line:#D9E0E6; --ink:#14232E; --ink-2:#4A5B68; --ink-3:#7A8894;
+  --paper:#FFFFFF; --panel:#F2F5F9; --line:#D8E0EA; --ink:#102B49; --ink-2:#44566E; --ink-3:#7A889B;
+  --navy:#102B49; --navy-2:#1B3D63; --lime:#B9EC54;
   --cave:#B4182D; --cave-bg:#FBEFF1; --amber:#9A6212; --amber-bg:#FBF4E6;
-  --action:#0F5E7A; --action-bg:#E7F1F5; --ok:#2E7550; --ok-bg:#EAF4EE;
+  --action:#102B49; --action-bg:#E9EFF6; --ok:#2E7550; --ok-bg:#EAF4EE;
 }
 .stApp, .stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5,
 .stApp input, .stApp textarea, .stApp button, .stApp table, .stApp td, .stApp th, .stApp div {
@@ -149,7 +150,39 @@ code {font-family: "Atkinson Hyperlegible", monospace !important;}
 /* Streamlit widgets in our palette */
 .stTabs [data-baseweb="tab-list"] {gap:1.2rem; border-bottom:1px solid var(--line);}
 .stTabs [data-baseweb="tab"] {font-size:1rem; padding:.5rem 0;}
-div[data-testid="stSidebar"] {background:var(--panel); border-right:1px solid var(--line);}
+/* sidebar: navy panel, white text (TUM Venture Labs tone) */
+[data-testid="stSidebar"], [data-testid="stSidebar"] > div, [data-testid="stSidebarContent"] {background:var(--navy) !important; border-right:none;}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {color:#FFFFFF !important;}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {opacity:.65;}
+[data-testid="stSidebar"] [data-baseweb="select"] span, [data-testid="stSidebar"] input {color:var(--ink) !important;}
+[data-testid="stSidebar"] button[kind="secondary"] {background:transparent; border:1px solid rgba(255,255,255,.45);}
+[data-testid="stSidebar"] button[kind="secondary"]:hover {border-color:var(--lime);}
+[data-testid="stSidebar"] button[kind="secondary"] p {color:#FFFFFF !important;}
+[data-testid="stSidebar"] button[kind="primary"] {background:var(--lime); border-color:var(--lime);}
+[data-testid="stSidebar"] button[kind="primary"] p {color:var(--navy) !important; font-weight:700;}
+[data-testid="stSidebar"] hr {border-color:rgba(255,255,255,.18);}
+[data-testid="stSidebar"] [data-testid="stExpander"] {border-color:rgba(255,255,255,.25);}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary:hover p {color:var(--lime) !important;}
+[data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarHeader"] svg {color:#FFFFFF;}
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] {background:#FFFFFF; border-radius:10px; padding:.45rem .7rem;}
+[data-testid="stSidebar"] [data-testid="stRadioGroup"] p {color:var(--navy) !important; font-weight:600;}
+[data-testid="stSidebar"] [data-testid="stCheckbox"] label > div:first-of-type {background:rgba(255,255,255,.28) !important;
+  border-color:rgba(255,255,255,.6) !important;}
+[data-testid="stSidebar"] [data-testid="stCheckbox"] label[data-selected="true"] > div:first-of-type {
+  background:var(--lime) !important; border-color:var(--lime) !important;}
+[data-testid="stSidebar"] [data-testid="stCheckbox"] label > div:first-of-type > div {background:#FFFFFF !important;}
+[data-testid="stSidebar"] [data-testid="stTooltipIcon"] svg {color:rgba(255,255,255,.7);}
+/* logo: the lime scan line sweeps once over the page on load; loops while a case is processed */
+.gw-logo .scan {transform-box:view-box; animation:gw-scan 1.9s ease-in-out 0.2s 1 both;}
+.gw-logo.busy .scan {animation:gw-scan 1.3s ease-in-out 0s infinite alternate;}
+@keyframes gw-scan {0% {transform:translateY(-12px); opacity:.2;} 55% {transform:translateY(11px); opacity:1;}
+                    100% {transform:translateY(0); opacity:1;}}
+.gw-hero-row {display:flex; align-items:center; gap:1.4rem;}
+.gw-busy {display:flex; align-items:center; gap:1rem; padding:.9rem 1.1rem; border-radius:12px;
+          background:var(--action-bg); color:var(--ink); font-size:1.02rem; margin:.6rem 0;}
+@media (prefers-reduced-motion: reduce) {.gw-logo .scan, .gw-logo.busy .scan {animation:none;}}
 *:focus-visible {outline:3px solid var(--action) !important; outline-offset:2px;}
 @media (prefers-reduced-motion: reduce) {* {transition:none !important; animation:none !important;}}
 </style>
@@ -274,3 +307,20 @@ def med_table(rows: list[dict]) -> str:
                    f'<td class="src k"><span class="gw-src">S.&nbsp;{esc(", ".join(pages))}</span></td></tr>')
     out.append("</tbody></table></div>")
     return "".join(out)
+
+
+LOGO_SVG = """<svg class="gw-logo{cls}" xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 48 48"
+ role="img" aria-label="Get Well OCR"><rect width="48" height="48" rx="11" fill="#102B49"/>
+<path d="M16 9h11l7 7v20a2 2 0 0 1-2 2H16a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2Z M27 9v7h7" fill="none" stroke="#FFF"
+ stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M21 31.5h6 M24 28.5v6" fill="none" stroke="#FFF" stroke-width="2.2" stroke-linecap="round"/>
+<g class="scan"><path d="M10 24h28" fill="none" stroke="#B9EC54" stroke-width="3" stroke-linecap="round"/></g></svg>"""
+
+
+def logo(size: int = 48, busy: bool = False) -> str:
+    """The Get Well OCR mark as inline SVG. busy=True: the scan line keeps moving (processing)."""
+    return LOGO_SVG.replace("{cls}", " busy" if busy else "").replace("{size}", str(size))
+
+
+def busy_box(text: str) -> str:
+    return f'<div class="gw-busy">{logo(40, busy=True)}<div>{esc(text)}</div></div>'

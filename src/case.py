@@ -210,9 +210,11 @@ BULLET = re.compile(r"^\s*(\d{1,2}[.)]|[*•·°»\-–—>])\s*")
 NUMBERED = re.compile(r"^\s*\d{1,2}[.)]\s+")
 ALLERGY_HEADING = re.compile(r"^\W*(Allergien|Unverträglichkeiten|Allergien\s*/\s*Unverträglichkeiten)\s*:?\s*$",
                              re.IGNORECASE)
+DASH_BETWEEN_DIGITS = re.compile(r"(?<=[\d½])\s*[–—]\s*(?=[\d½])")
 CORRECTION = re.compile(r"irrtümlich|fälschlich|Korrektur\b|korrigiert", re.IGNORECASE)
-CORRECT_VALUE = re.compile(r"korrekt\w*[^.]*?(\d+(?:[.,]\d+)?)\s*(mg|µg|ug|g|IE)\b\s*((?:\d|½)\s*-\s*(?:\d|½)\s*-"
-                           r"\s*(?:\d|½)(?:\s*-\s*(?:\d|½))?)?", re.IGNORECASE)
+CORRECT_VALUE = re.compile(r"\b(?:korrekte[nrs]?|richtige[nrs]?|richtig ist|neue Dosis)\b[^.]*?(\d+(?:[.,]\d+)?)\s*"
+                           r"(mg|µg|ug|g|IE)\b\s*((?:\d|½)\s*-\s*(?:\d|½)\s*-\s*(?:\d|½)(?:\s*-\s*(?:\d|½))?)?",
+                           re.IGNORECASE)   # "Korrektur" itself is NOT the corrected value
 AS_NEEDED_RX = re.compile(r"\bb\.\s?B\.|\bbei Bedarf\b|\bbei (schwer\w*|starke\w*)?\s*(Hypo\w*|Schmerz\w*|Atemnot|"
                           r"Übelkeit|Unruhe|Fieber|Schlaflosigkeit)", re.IGNORECASE)
 ANTICOAGULANTS = {"Apixaban", "Rivaroxaban", "Edoxaban", "Dabigatran", "Phenprocoumon"}
@@ -246,7 +248,12 @@ def find_drugs(line: str) -> list[tuple[str, int]]:
             best = process.extractOne(tok, SINGLE_WORD, scorer=fuzz.ratio, score_cutoff=85)
             if best:
                 found.append((DRUG_LOWER[best[0]], m.start()))
-    return sorted(found, key=lambda x: x[1])
+    out, seen = [], set()
+    for name, pos in sorted(found, key=lambda x: x[1]):   # "Enoxaparin (Clexane®)" -> one mention
+        if name not in seen:
+            out.append((name, pos))
+            seen.add(name)
+    return out
 
 
 def line_status(line: str) -> str | None:
@@ -281,7 +288,7 @@ def extract_page(p: dict) -> dict:
     for i, l in enumerate(lines):
         if not CORRECTION.search(l["text"]):
             continue
-        block_idx = [i] + ([i + 1] if i + 1 < len(lines) else [])
+        block_idx = [i] if CORRECT_VALUE.search(l["text"]) else [i] + ([i + 1] if i + 1 < len(lines) else [])
         block = " ".join(lines[j]["text"] for j in block_idx)
         drugs_in_block = find_drugs(block)
         right = CORRECT_VALUE.search(block)
@@ -303,9 +310,7 @@ def extract_page(p: dict) -> dict:
         text, conf = l["text"], l["conf"]
         low = text.lower()
         src = {"page": page, "doc_id": p.get("doc_id"), "source_text": text}
-        if idx in consumed:
-            previous = text
-            continue
+        text = DASH_BETWEEN_DIGITS.sub("-", text)          # "0 – 0 – 1 – 0" -> "0-0-1-0"
         if MED_HEADINGS.match(text):
             section = "meds"
             continue
@@ -333,13 +338,15 @@ def extract_page(p: dict) -> dict:
                 facts["cave"].append({"category": "allergy", "fact": f"Allergie: {item}", **src})
             continue
 
-        # medications (table rows and prose)
-        drugs = find_drugs(text)
+        # medications (table rows and prose); lines of a correction note were handled above
+        drugs = find_drugs(text) if idx not in consumed else []
         switched = {m.group(1).lower() for m in SWITCH.finditer(text)}
         for i, (drug, pos) in enumerate(drugs):
             end = drugs[i + 1][1] if i + 1 < len(drugs) else len(text)
             segment = text[pos:end]
-            near = re.sub(r"(\d)\s*pg\b", r"\1 µg", segment[:35])   # OCR reads µg as pg
+            segment = re.sub(r"^(\S+)\s*\([^)]{1,30}\)", r"\1", segment)   # "Enoxaparin (Clexane®) 40 mg"
+            window = 70 if "|" in segment else 35     # table rows: dose sits a few columns further right
+            near = re.sub(r"(\d)\s*pg\b", r"\1 µg", segment[:window])   # OCR reads µg as pg
             s, d = STRENGTH.search(near), DOSING.search(near)
             if s and s.group(2).lower() == "ml":     # "eGFR unter 30 ml/min" is not a dose
                 s = None

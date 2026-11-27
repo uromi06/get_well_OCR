@@ -46,8 +46,9 @@ def list_cases() -> list[dict]:
                 continue
             answers = d / f"{d.name}_answers.json"
             meta = d / "case.json"
-            label = json.loads(meta.read_text(encoding="utf-8")).get("label", d.name) if meta.exists() else d.name
-            cases.append({"id": d.name, "label": label, "dir": d, "pages_dir": pages_dir(d),
+            info = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
+            label, created = info.get("label", d.name), info.get("created_at")
+            cases.append({"id": d.name, "label": label, "created_at": created, "dir": d, "pages_dir": pages_dir(d),
                           "n_pages": len(files), "private": private,
                           "answers": answers if answers.exists() else None})
     return cases
@@ -104,6 +105,16 @@ def delete_case(case_id: str) -> None:
         shutil.rmtree(case_dir)
     if out_dir(case_id).exists():
         shutil.rmtree(out_dir(case_id))
+
+
+def delete_all_private() -> int:
+    """Delete every uploaded case (photos, OCR, results, review). Test cases in data/cases stay."""
+    n = 0
+    if PRIVATE_ROOT.exists():
+        for d in [p for p in PRIVATE_ROOT.iterdir() if p.is_dir()]:
+            delete_case(d.name)
+            n += 1
+    return n
 
 
 def load_result(case_id: str) -> dict | None:

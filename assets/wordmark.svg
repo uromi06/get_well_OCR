@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="48" viewBox="0 0 220 48" role="img" aria-labelledby="t">
+  <title id="t">Get Well OCR</title>
+  <rect width="48" height="48" rx="11" fill="#FFFFFF" fill-opacity="0.08"/>
+  <path d="M16 9h11l7 7v20a2 2 0 0 1-2 2H16a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2Z M27 9v7h7" fill="none" stroke="#FFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 31.5h6 M24 28.5v6" fill="none" stroke="#FFF" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M10 24h28" fill="none" stroke="#B9EC54" stroke-width="3" stroke-linecap="round"/>
+  <text x="60" y="30" font-family="Atkinson Hyperlegible, Segoe UI, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#FFFFFF">Get Well OCR</text>
+</svg>

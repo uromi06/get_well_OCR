@@ -23,6 +23,16 @@ _tess = os.getenv("TESSERACT_CMD", "").strip()
 TESSERACT_CMD = _tess if _tess and Path(_tess).is_file() else ""
 TESSERACT_LANG = "deu+eng"
 
+# Mistral on Azure AI Foundry (EU region, provided by the hackathon)
+#   OCR:  Mistral Document AI, returns Markdown per page
+#   Chat: Mistral Large 3 (OpenAI-compatible chat completions), writes the patient history text
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
+MISTRAL_CHAT_ENDPOINT = os.getenv("MISTRAL_CHAT_ENDPOINT", "").strip()
+MISTRAL_CHAT_MODEL = os.getenv("MISTRAL_CHAT_MODEL", "Mistral-Large-3").strip()
+MISTRAL_OCR_ENDPOINT = os.getenv("MISTRAL_OCR_ENDPOINT", "").strip()
+MISTRAL_OCR_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-document-ai-2512").strip()
+MISTRAL_OCR_KEY = os.getenv("MISTRAL_OCR_KEY", "").strip() or MISTRAL_API_KEY
+
 AZURE_DI_ENDPOINT = os.getenv("AZURE_DI_ENDPOINT", "")
 AZURE_DI_KEY = os.getenv("AZURE_DI_KEY", "")
 
