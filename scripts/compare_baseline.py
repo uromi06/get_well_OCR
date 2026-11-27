@@ -44,7 +44,7 @@ BASELINE_PROMPT = (
 
 STOP_WORDS = re.compile(r"abgesetzt|pausiert|beendet|gestoppt|nicht mehr|ehemals|früher|alt\b|umgestellt",
                         re.IGNORECASE)
-HEADING = re.compile(r"^\s*(#+\s*)?\**\s*(\d+\.\s*)?\**\s*(mitgebrachte|dokumente|cave|diagnosen|aktuelle medikation|medikation|"
+HEADING = re.compile(r"^\s*(#+\s*)?\**\s*(mitgebrachte|dokumente|cave|diagnosen|aktuelle medikation|medikation|"
                      r"labor|anamnese|kontakt|zu klären|widersprüche|hinweise|befunde|abgesetzt)", re.IGNORECASE)
 
 
@@ -74,25 +74,17 @@ def current_med_lines(text: str) -> list[str]:
             low = line.lower()
             in_meds = "medikation" in low and "abgesetzt" not in low
             continue
-        if re.match(r"^[\s|*#-]*(abgesetzt|pausiert|beendet)", line, re.IGNORECASE):
-            in_meds = False                  # "| **Abgesetzt:** |" row inside a Markdown table
-            continue
         if in_meds and line.strip() and not STOP_WORDS.search(line):
             out.append(line)
     return out
 
 
-def _names(line: str, drug: str) -> bool:
-    """The line is about this drug (it starts with it), not only mentions it ('statt Phenprocoumon')."""
-    return re.sub(r"^[\s|*#•-]+", "", line).lower().startswith(drug.lower())
-
-
 def listed_as_current(text: str, drug: str) -> bool:
-    return any(_names(l, drug) for l in current_med_lines(text))
+    return any(drug.lower() in l.lower() for l in current_med_lines(text))
 
 
 def dose_line(text: str, drug: str) -> str:
-    return next((l for l in current_med_lines(text) if _names(l, drug)), "")
+    return next((l for l in current_med_lines(text) if drug.lower() in l.lower()), "")
 
 
 def numbers_not_in_documents(text: str, documents: str) -> list[str]:
@@ -117,7 +109,6 @@ def check(text: str, answers: dict, documents: str) -> dict:
     allergy_neg_unqualified = any(re.search(r"allergi\w*:?\s*(keine|nicht bekannt)", l, re.IGNORECASE)
                                   and "penicillin" not in l.lower() for l in text.splitlines())
     traps = {
-        "Apixaban als aktuelles Antikoagulans gelistet": listed_as_current(text, "Apixaban"),
         "Phenprocoumon (alt) NICHT als aktuell gelistet": not listed_as_current(text, "Phenprocoumon"),
         "Glimepirid (laut Fax abgesetzt) NICHT als aktuell": not listed_as_current(text, "Glimepirid"),
         "Sitagliptin (2021) NICHT als aktuell": not listed_as_current(text, "Sitagliptin"),

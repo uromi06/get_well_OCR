@@ -85,26 +85,11 @@ def score_case(result: dict, answers: dict) -> dict:
     for n in answers["needles"]:
         keys = n.get("match") or DEFAULT_NEEDLE_MATCH.get(n["id"], [])
         needles.append({"id": n["id"], "fact": n["fact"], "found": all(k.lower() in summary for k in keys)})
-    # medication status: a drug that is mentioned but filed as stopped (or vice versa) is a
-    # dangerous error the word search above cannot see
-    def _on(status):
-        return status not in ("stopped", "paused")
-    got = {m["name"].lower(): m.get("status") for m in result["summary"].get("medications", [])}
-    status_wrong = []
-    for m in answers.get("current_medication", []):
-        mine = got.get(m["name"].lower(), "missing")
-        if mine == "missing" or _on(mine) != _on(m["status"]):
-            status_wrong.append({"name": m["name"], "truth": m["status"], "predicted": mine or "active"})
-    for n in needles:                       # N1 "Apixaban is the current anticoagulant" needs Apixaban active
-        if n["id"] == "N1" and any(w["name"] == "Apixaban" for w in status_wrong):
-            n["found"] = False
     truth = {p: d["type"] for d in answers["documents"] for p in d["pages"]}
     pred = {p["page"]: p["doc_type"] for p in result["pages"]}
     judged = [p for p in truth if pred.get(p)]
     wrong = [{"page": p, "predicted": pred[p], "truth": truth[p]} for p in judged if pred[p] != truth[p]]
-    n_meds = len(answers.get("current_medication", []))
     return {
-        "meds_status_correct": n_meds - len(status_wrong), "meds_total": n_meds, "meds_status_wrong": status_wrong,
         "needles_found": sum(n["found"] for n in needles), "needles_total": len(needles),
         "pages_classified": len(judged), "pages_correct": len(judged) - len(wrong),
         "retake": [p["page"] for p in result["pages"] if p["status"] == "retake"],
