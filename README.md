@@ -108,11 +108,14 @@ flowchart LR
 </td></tr>
 </table>
 
-### 🧪 Stress test: 480 deliberately damaged pages
+### 🧪 Stress test: the 20-page case, deliberately damaged
 
-<img src="docs/img/robustness.png" alt="Robustness chart: facts found and pages sent back per damage type and level">
+<img src="docs/img/robustness.png" alt="Robustness chart: critical facts found and pages sent back for skew, fax and noise at damage levels 0 to 4">
 
-Six kinds of damage (blur, noise, skew, shadow, WhatsApp compression, fax) at four levels each. **Shadows and compression barely matter.** Heavy blur and fax are **sent back for a retake** instead of producing silent mistakes.
+Three kinds of damage (skew, noise, fax) at four levels each, from clean (0) to almost unreadable (4).
+
+- **Skew and noise:** at least 9 of 13 critical facts are still found at the worst level.
+- **Fax:** from level 3 on, **every page is sent back for a retake**, so no facts are read instead of wrong ones. The system stops rather than guessing.
 
 ---
 
@@ -166,7 +169,7 @@ python scripts/process_case.py         # runs the test case, prints the scorecar
 
 - Python 3.12 and Tesseract 5 with the **German** language pack. `start.sh` / `start.bat` install both. Manual install on Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki)
 - Login: `APP_USERNAME` and `APP_PASSWORD` in `.env` (required)
-- Optional: Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY`, `MISTRAL_OCR_ENDPOINT`, `MISTRAL_CHAT_ENDPOINT` in `.env` (**never commit it**)
+- Optional: Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY`, `MISTRAL_OCR_ENDPOINT`, `MISTRAL_CHAT_ENDPOINT` in `.env`. The team `.env` with the shared keys is in this private repository; keep the repository private, and rotate the keys before it is ever made public
 - Optional: Azure Document Intelligence (EU region), endpoint and key in `.env`
 - The classifier model (`multilingual-e5-small`, ~120 MB) downloads once, then runs offline
 
