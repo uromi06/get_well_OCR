@@ -143,11 +143,6 @@ def is_ready(review: dict) -> bool:
     return all(r["confirmed"] for r in review["meds"])
 
 
-def history_text(review: dict) -> str | None:
-    hist = review.get("history_ai")
-    return hist["text"] if hist and hist.get("accepted") else None
-
-
 def score(c: dict, result: dict) -> dict | None:
     if not c["answers"]:
         return None

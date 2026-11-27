@@ -240,7 +240,6 @@ class ReviewIn(BaseModel):
     meds: list[dict]
     conflicts_ok: list[int] = []
     reviewer: str = ""
-    history_ai: dict | None = None
 
 
 @app.put("/api/cases/{case_id}/review")
@@ -252,33 +251,8 @@ def save_review(case_id: str, body: ReviewIn, _: str = Depends(auth.require_user
     review.update(meds=cases.clean_meds(body.meds),
                   conflicts_ok=sorted({i for i in body.conflicts_ok if 0 <= i < n_conflicts}),
                   reviewer=body.reviewer.strip()[:120])
-    if body.history_ai is not None and review.get("history_ai"):
-        from src.history import history_facts, unsupported_numbers
-        text = str(body.history_ai.get("text", ""))
-        review["history_ai"].update(
-            text=text, accepted=bool(body.history_ai.get("accepted")),
-            unsupported=unsupported_numbers(text, history_facts(result, cases.confirmed_meds(review))))
     store.save_review(case_id, review)
     return {"review": review, "corrections": cases.audit(review), "ready": cases.is_ready(review)}
-
-
-@app.post("/api/cases/{case_id}/history")
-def write_history(case_id: str, _: str = Depends(auth.require_user)) -> dict:
-    _case_or_404(case_id)
-    result = _result_or_409(case_id)
-    if not mistral.chat_available():
-        raise HTTPException(400, "Mistral Large 3 ist auf dem Server nicht eingerichtet.")
-    review = cases.current_review(case_id, result)
-    if not cases.is_ready(review):
-        raise HTTPException(409, "Erst alle Medikamente bestätigen.")
-    from src.history import write_history as write
-    try:
-        h = write(result, cases.confirmed_meds(review))
-    except mistral.MistralError as e:
-        raise HTTPException(502, f"Mistral nicht erreichbar: {e}") from e
-    review["history_ai"] = {"text": h["text"], "unsupported": h["unsupported"], "accepted": False}
-    store.save_review(case_id, review)
-    return {"review": review}
 
 
 # ================================================================== report and exports
@@ -289,7 +263,7 @@ def _report(case_id: str, lang: str, sources: bool) -> tuple[dict, dict, str]:
     review = cases.current_review(case_id, result)
     text = er_report(result, cases.confirmed_meds(review), lang, confirmed=cases.is_ready(review),
                      reviewer=review.get("reviewer", ""), resolved=review["conflicts_ok"],
-                     show_sources=sources, history_text=cases.history_text(review))
+                     show_sources=sources)
     return result, review, text
 
 

@@ -596,7 +596,7 @@ function tabReview(el, d) {
     if (st) st.textContent = "Wird gespeichert …";
     S.saveTimer = setTimeout(async () => {
       try {
-        const out = await api(`/api/cases/${enc(id)}/review`, { method: "PUT", json: { meds: rv.meds, conflicts_ok: rv.conflicts_ok, reviewer: rv.reviewer || "", history_ai: rv.history_ai || null } });
+        const out = await api(`/api/cases/${enc(id)}/review`, { method: "PUT", json: { meds: rv.meds, conflicts_ok: rv.conflicts_ok, reviewer: rv.reviewer || "" } });
         Object.assign(rv, out.review);
         corrections = out.corrections;
         d.ready = out.ready;
@@ -791,10 +791,9 @@ function tabExport(el, d) {
   const id = d.case.id, rv = d.review;
   const patient = (d.result.patient || {}).name || "";
   const ready = rv.meds.every((m) => m.confirmed);
-  const chat = S.meta.chat_available;
   let lang = "de", withSrc = false;
   const putReview = async () => {
-    const out = await api(`/api/cases/${enc(id)}/review`, { method: "PUT", json: { meds: rv.meds, conflicts_ok: rv.conflicts_ok, reviewer: rv.reviewer || "", history_ai: rv.history_ai || null } });
+    const out = await api(`/api/cases/${enc(id)}/review`, { method: "PUT", json: { meds: rv.meds, conflicts_ok: rv.conflicts_ok, reviewer: rv.reviewer || "" } });
     Object.assign(rv, out.review);
   };
   const loadReport = async () => {
@@ -802,22 +801,10 @@ function tabExport(el, d) {
     box.textContent = "…";
     try { box.textContent = await api(`/api/cases/${enc(id)}/report?lang=${lang}&sources=${withSrc}`); } catch (e) { box.textContent = e.message; }
   };
-  const checkHtml = (hist) => (hist.unsupported && hist.unsupported.length
-    ? `<div class="note warn">${ICON.info}<span>Nicht in den geprüften Fakten belegt: ${esc(hist.unsupported.join(", "))}. Bitte korrigieren oder entfernen.</span></div>`
-    : `<div class="note ok">${ICON.info}<span>Alle Zahlen und Daten im Text sind in den geprüften Fakten belegt.</span></div>`);
-  const histHtml = () => {
-    if (!chat) return `<p class="muted" style="margin:0">Mistral Large 3 ist nicht eingerichtet. Der Übergabetext enthält dann die Anamnese als Liste nach Datum.</p>`;
-    const hist = rv.history_ai;
-    return `<p class="muted" style="margin:0">Das Modell bekommt nur die geprüften Fakten dieses Falls, keine Fotos und keinen Rohtext. Jede Zahl und jedes Datum im Ergebnis wird gegen die Fakten geprüft.</p>
-      <button class="btn" id="ai" ${ready ? "" : "disabled"}>Anamnese mit Mistral formulieren</button>
-      ${hist ? `<label class="field">Text (bearbeitbar)<textarea id="aitext">${esc(hist.text)}</textarea></label><div id="aicheck">${checkHtml(hist)}</div>
-        <label class="check"><input type="checkbox" id="aiok" ${hist.accepted ? "checked" : ""}> Text geprüft und für den Übergabetext freigegeben</label>` : ""}`;
-  };
   const dl = (kind, extra = "") => `/api/cases/${enc(id)}/export/${kind}?lang=${lang}&sources=${withSrc}${extra}`;
   el.innerHTML = `<div class="body" style="padding-top:0;padding-bottom:28px">
     ${ready ? "" : `<div class="note warn">${ICON.info}<span>Noch ${rv.meds.filter((m) => !m.confirmed).length} Medikament(e) nicht bestätigt (Tab „Prüfen“). Exporte werden erst nach vollständiger ärztlicher Prüfung freigegeben.</span></div>`}
     <label class="field">Geprüft von<input type="text" id="reviewer" value="${esc(rv.reviewer || "")}" placeholder="Name der Ärztin / des Arztes"></label>
-    <section class="card"><h2 style="font-size:15px">Anamnese als Fließtext (Mistral Large 3)</h2><div id="hist" style="display:flex;flex-direction:column;gap:10px">${histHtml()}</div></section>
     <section class="card"><div class="card-head"><h2>Übergabetext für das Krankenhaussystem</h2><button class="chip-btn" id="copy">Kopieren</button></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="seg" id="lang"><button data-v="de" class="on">Deutsch</button><button data-v="en">English</button></div>
         <label class="check"><input type="checkbox" id="withsrc"> Quellseiten [S. x] anzeigen</label></div>
@@ -854,27 +841,6 @@ function tabExport(el, d) {
   document.getElementById("copy").onclick = (e) => copyText(document.getElementById("report").textContent, e.currentTarget);
   document.getElementById("plang").onchange = renderDownloads;
   document.getElementById("pname").oninput = renderDownloads;
-  const bindHist = () => {
-    const ai = document.getElementById("ai");
-    if (ai) ai.onclick = async () => {
-      ai.disabled = true; ai.textContent = "Mistral Large 3 formuliert …";
-      try { const out = await api(`/api/cases/${enc(id)}/history`, { method: "POST" }); Object.assign(rv, out.review); } catch (e) { toast(e.message, true); }
-      document.getElementById("hist").innerHTML = histHtml(); bindHist(); loadReport();
-    };
-    const text = document.getElementById("aitext");
-    let tTimer;
-    if (text) text.oninput = () => {
-      rv.history_ai.text = text.value; rv.history_ai.accepted = false;
-      document.getElementById("aiok").checked = false;
-      clearTimeout(tTimer);
-      tTimer = setTimeout(async () => {
-        try { await putReview(); document.getElementById("aicheck").innerHTML = checkHtml(rv.history_ai); loadReport(); } catch (e) { toast(e.message, true); }
-      }, 700);
-    };
-    const ok = document.getElementById("aiok");
-    if (ok) ok.onchange = async () => { rv.history_ai.accepted = ok.checked; try { await putReview(); loadReport(); } catch (e) { toast(e.message, true); } };
-  };
-  bindHist();
   renderDownloads();
   loadReport();
 }

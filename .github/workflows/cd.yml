@@ -55,6 +55,9 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/cases)" = 401
           curl -fsS -c jar -H 'Content-Type: application/json' -d '{"username":"ci","password":"ci"}' http://localhost:8080/api/login
           curl -fsS -b jar http://localhost:8080/api/cases | grep -q case01
+          # report endpoint must answer 409 (not processed yet in CI) or 200, never 500 (broken pipeline call)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -b jar http://localhost:8080/api/cases/case01/report)
+          echo "report: $code"; [ "$code" = 409 ] || [ "$code" = 200 ]
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
