@@ -19,9 +19,9 @@ from src.case import CONFIDENCE_MIN, SHARPNESS_MIN, process_case, summary_text
 from src.evaluate import score_case
 from src.report import er_report
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
-from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, chip, cleaned_page,
-                              doc_chip, esc, highlight, html_block, inject_css, legend, ocr_cache, sources,
-                              thumbnail)
+from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, cave_panel, chip, cleaned_page,
+                              doc_chip, esc, highlight, html_block, inject_css, legend, med_table, ocr_cache, section,
+                              sources, strip, thumbnail)
 
 inject_css()
 MED_STATUSES = ["active", "new", "paused", "stopped"]
@@ -100,14 +100,24 @@ patient = (result or {}).get("patient") or {}
 pname = patient.get("name") or case["label"]
 birth = f"geb. {patient['birth']}" if patient.get("birth") else ""
 processed = (result or {}).get("processed_at", "")
+age = ""
+if patient.get("birth"):
+    try:
+        bd = datetime.strptime(patient["birth"], "%d.%m.%Y")
+        now = datetime.now()
+        age = f"{now.year - bd.year - ((now.month, now.day) < (bd.month, bd.day))} Jahre"
+    except ValueError:
+        pass
+who = ", ".join(x for x in [f"<b>{esc(age)}</b>" if age else "", esc(birth)] if x)
 html_block(f"""
-<div class="gw-header">
+<div class="gw-patient">
   <div><div class="name">{esc(pname)}</div>
-       <div class="meta">{esc(birth)} · Fall <code>{esc(case_id)}</code> · {case['n_pages']} Seiten</div></div>
-  <div class="meta" style="text-align:right">
-    {chip('FIKTIVE DATEN', '#b91c1c') if not case['private'] else chip('PRIVAT', '#475569')}
-    {chip(result['engine']) if result else ''}<br>
-    {('verarbeitet ' + esc(processed.replace('T', ' '))) if processed else 'noch nicht verarbeitet'}
+       <div class="who">{who or 'Patientendaten nicht erkannt'}</div></div>
+  <div class="side">
+    <span class="gw-tag {'fict' if not case['private'] else ''}">{'Fiktive Daten' if not case['private'] else 'Privater Fall'}</span>
+    {f'<span class="gw-tag">{esc(result["engine"])}</span>' if result else ''}<br>
+    Fall {esc(case_id)}, {case['n_pages']} Seiten<br>
+    {('verarbeitet ' + esc(processed.replace('T', ' ')[:16])) if processed else 'noch nicht verarbeitet'}
   </div>
 </div>""")
 
@@ -131,7 +141,7 @@ def _machine_rows() -> list[dict]:
                       if any(m["name"] in c["text"] for c in summary["conflicts"] + summary["warnings"])}
     return [{"confirmed": False, "name": m["name"], "strength": m.get("strength") or "",
              "dosing": m.get("dosing") or "", "status": m["status"],
-             "flag": "⚠ prüfen" if m["name"] in conflict_names else "",
+             "flag": "⚠ prüfen" if m["name"] in conflict_names or m.get("unknown") else "",
              "sources": ", ".join(str(s) for s in m["sources"])} for m in summary["medications"]]
 
 
@@ -164,17 +174,15 @@ def _audit() -> list[dict]:
 n_unconfirmed = sum(not r["confirmed"] for r in review["meds"])
 n_open_conflicts = len(summary["conflicts"]) - len(review["conflicts_ok"])
 
-m = st.columns(6)
-m[0].metric("Seiten", len(pages), help="Fotografierte Seiten in diesem Fall")
-m[1].metric("Dokumente", len(docs))
-m[2].metric("Neu fotografieren", len(retake), delta="bitte prüfen" if retake else None, delta_color="inverse")
-m[3].metric("Widersprüche offen", max(n_open_conflicts, 0))
-m[4].metric("Medikamente bestätigt", f"{len(review['meds']) - n_unconfirmed}/{len(review['meds'])}")
-if score:
-    m[5].metric("Kritische Fakten", f"{score['needles_found']}/{score['needles_total']}",
-                help="Gegen die Lösungsdatei dieses Testfalls")
-else:
-    m[5].metric("Hinweise", len(summary["warnings"]))
+n_conf = len(review["meds"]) - n_unconfirmed
+cells = [(len(pages), "Seiten fotografiert", ""), (len(docs), "Dokumente erkannt", ""),
+         (len(retake), "neu fotografieren", "bad" if retake else "good"),
+         (max(n_open_conflicts, 0), "Widersprüche offen", "warn" if n_open_conflicts > 0 else "good"),
+         (f"{n_conf}/{len(review['meds'])}", "Medikamente bestätigt", "good" if n_unconfirmed == 0 else "")]
+cells.append((f"{score['needles_found']}/{score['needles_total']}", "kritische Fakten (Testfall)",
+              "good" if score["needles_found"] == score["needles_total"] else "warn") if score
+             else (len(summary["warnings"]), "Sicherheitshinweise", "warn" if summary["warnings"] else ""))
+html_block(strip(cells))
 
 if retake:
     st.warning("**Bitte neu fotografieren:** " + ", ".join(
@@ -186,37 +194,38 @@ tabs = st.tabs(["🩺 Notaufnahme-Übersicht", "📄 Seiten", "💊 Medikation",
 # ================================================================== tab: ER summary
 
 with tabs[0]:
-    left, right = st.columns([3, 2], gap="large")
+    left, right = st.columns([1, 1], gap="large")
     with left:
-        html_block(card("CAVE", [f"<b>{esc(c['text'])}</b>{sources(c['sources'])}" for c in summary["cave"]], "cave"))
-        warn_items = [f"{esc(w['text'])}{sources(w['sources'])}" for w in summary["warnings"]]
-        html_block(card("Sicherheitshinweise", warn_items, "warn", "Keine automatischen Hinweise."))
-        st.markdown("##### Widersprüche zwischen Dokumenten")
+        html_block(cave_panel([f"<b>{esc(c['text'])}</b>{sources(c['sources'])}" for c in summary["cave"]]))
+        if summary["warnings"]:
+            html_block(card("Sicherheitshinweise", [f"{esc(w['text'])}{sources(w['sources'])}"
+                                                    for w in summary["warnings"]], "warn"))
+        st.markdown("#### Zu klären")
         if not summary["conflicts"]:
-            st.caption("Keine Widersprüche gefunden.")
+            st.caption("Die Dokumente widersprechen sich nicht.")
+        else:
+            st.caption("Diese Angaben widersprechen sich zwischen den Dokumenten. Abhaken, wenn geklärt.")
         for i, c in enumerate(summary["conflicts"]):
             done = i in review["conflicts_ok"]
-            t, b = st.columns([6, 1], vertical_alignment="center")
+            t, b = st.columns([5, 1], vertical_alignment="center")
             t.markdown(f'<div class="gw-conflict{" done" if done else ""}">{esc(c["text"])}{sources(c["sources"])}</div>',
                        unsafe_allow_html=True)
-            ok = b.checkbox("geklärt", value=done, key=f"cf_{case_id}_{i}")
+            ok = b.checkbox("✓", value=done, key=f"cf_{case_id}_{i}", help="Als geklärt markieren")
             if ok != done:
                 review["conflicts_ok"] = sorted(set(review["conflicts_ok"]) ^ {i})
                 _save_review()
                 st.rerun()
     with right:
-        active = [r for r in review["meds"] if r["status"] != "stopped"]
-        meds_html = [f"<b>{esc(r['name'])}</b> {esc(r['strength'])} {esc(r['dosing'])} "
-                     f"{chip(STATUS_LABELS[r['status']], '#0d9488') if r['status'] != 'active' else ''}"
-                     f"{'✔' if r['confirmed'] else ''}{sources(r['sources'].split(', '))}" for r in active]
-        html_block(card("Aktuelle Medikation", meds_html, "info"))
-        stopped = [r for r in review["meds"] if r["status"] == "stopped"]
-        if stopped:
-            html_block(card("Abgesetzt", [f"{esc(r['name'])}{sources(r['sources'].split(', '))}" for r in stopped], "info"))
-        html_block(card("Diagnosen", [f"{esc(d['text'])} <span class='gw-muted'>({esc(d['icd10'])})</span>"
-                                      f"{sources(d['sources'])}" for d in summary["diagnoses"][:10]], "info"))
-        html_block(card("Kontakt / Vollmacht", [f"{esc(c['text'])}{sources(c['sources'])}" for c in summary["contacts"]],
-                        "ok"))
+        st.markdown("#### Medikation")
+        order = {"new": 0, "active": 0, "paused": 1, "stopped": 2}
+        html_block(med_table(sorted(review["meds"], key=lambda r: (order.get(r["status"], 0), r["name"]))))
+        st.caption("Abgeglichen aus allen Dokumenten. Prüfen und bestätigen im Tab 💊 Medikation.")
+        html_block(section("Diagnosen", [
+            f"{esc(d['text'])}{' <span class=gw-muted>' + esc(d['icd10']) + '</span>' if d['icd10'] else ''}"
+            f"{sources(d['sources'])}" for d in summary["diagnoses"][:12]]))
+        html_block(card("Kontakt / Vorsorgevollmacht", [f"{esc(c['text'])}{sources(c['sources'])}"
+                                                        for c in summary["contacts"]], "ok",
+                        "Keine Kontaktperson gefunden."))
     st.markdown("##### Übergabetext (Entwurf)")
     st.caption("Format der Notaufnahme. Endgültige Fassung mit bestätigter Medikation im Tab ⬇ Export.")
     st.code(er_report(result, review["meds"], "de", confirmed=n_unconfirmed == 0, reviewer=review.get("reviewer", "")),
@@ -364,10 +373,14 @@ with tabs[4]:
                  hide_index=True, use_container_width=True)
     st.markdown("##### Dokumente")
     for d in docs:
-        with st.expander(f"{d['doc_id']} · {d['title']} · {d['date'] or 'ohne Datum'} · "
+        with st.expander(f"{'⚠ ' if d.get('type_check') else ''}{d['doc_id']} · {d['title']} · {d['date'] or 'ohne Datum'} · "
                          f"{len(d['pages'])} Seite(n)"):
-            html_block(doc_chip(d["type"]) + f'<span class="gw-muted"> Zuordnung sicher zu '
-                                             f'{d["type_confidence"]:.0%}</span>')
+            how = {"rules": "Schlüsselwörter", "model": "Sprachmodell (Embedding)"}.get(d.get("classified_by"), "Regeln")
+            html_block(doc_chip(d["type"]) + f'<span class="gw-muted"> zugeordnet durch {how}, '
+                                             f'Sicherheit {d["type_confidence"]:.0%}</span>')
+            if d.get("type_check"):
+                st.warning(f"Regeln und Modell sind uneinig: Regeln = {DOC_TYPE_LABELS.get(d['rules_type'])}, "
+                           f"Modell = {DOC_TYPE_LABELS.get(d['model_type'])}. Bitte Dokumenttyp prüfen.")
             cols = st.columns(6)
             for i, pg in enumerate(d["pages"]):
                 f = case["pages_dir"] / pages[pg - 1]["file"]

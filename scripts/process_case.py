@@ -36,11 +36,19 @@ def main():
     ap.add_argument("--pages", default=str(config.DATA_DIR / "cases" / "case01" / "pages_photo"))
     ap.add_argument("--engine", default=config.OCR_ENGINE)
     ap.add_argument("--fresh", action="store_true")
+    ap.add_argument("--classifier", choices=["rules", "model", "hybrid"], help="default: CLASSIFIER in .env / config")
     args = ap.parse_args()
 
+    if args.classifier:
+        config.CLASSIFIER = args.classifier
     folder = Path(args.pages)
     case_dir = folder.parent if folder.name.startswith("pages") else folder
     out_dir = config.OUTPUT_DIR / "cases" / case_dir.name
+    if config.CLASSIFIER != "rules":
+        from src.doc_classifier import available_backend
+        backend = available_backend()
+        print(f"Classifier: {config.CLASSIFIER} (model backend: {backend})"
+              + ("  <- install sentence-transformers for the real model" if backend == "tfidf" else ""))
     result = process_case(folder, out_dir, args.engine, args.fresh)
 
     report = er_report(result)

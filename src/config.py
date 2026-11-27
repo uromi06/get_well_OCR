@@ -29,5 +29,10 @@ AZURE_DI_KEY = os.getenv("AZURE_DI_KEY", "")
 # Review: fields below this confidence are flagged for the doctor to check
 LOW_CONFIDENCE = 0.80
 
+# Document classification: "rules" (keywords), "model" (embedding model), "hybrid" (both, flag disagreement)
+CLASSIFIER = os.getenv("CLASSIFIER", "hybrid").lower()
+CLASSIFIER_BACKEND = os.getenv("CLASSIFIER_BACKEND", "e5").lower()      # e5 | tfidf
+CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "intfloat/multilingual-e5-small")
+
 for _d in (SYNTHETIC_DIR, DEGRADED_DIR, GROUND_TRUTH_DIR, CACHE_DIR, FIGURE_DIR):
     _d.mkdir(parents=True, exist_ok=True)

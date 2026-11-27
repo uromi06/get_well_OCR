@@ -16,8 +16,9 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
+from . import config
 from .drugs import DRUGS
 from .extract import read_text
 from .parse import DOSING, ICD10, ICD10_OCR_FIX, STRENGTH, merge_rows
@@ -139,6 +140,36 @@ def find_issuer(text: str) -> str | None:
     return m.group(0) if m else None
 
 
+RULES_CONFIDENT = 0.5      # rules share of the keyword score above which rules are trusted
+
+
+def classify_page(text: str, mode: str | None = None) -> dict:
+    """Combine keyword rules and the embedding model.
+
+    rules : keywords only (explainable baseline)
+    model : embedding model only
+    hybrid: rules when they are confident, else the model; if both have an opinion and
+            disagree, the document is flagged 'check' for the doctor.
+    """
+    mode = mode or config.CLASSIFIER
+    r_type, r_conf = classify(text)
+    out = {"rules": {"type": r_type, "confidence": r_conf}, "model": None, "check": False}
+    if mode == "rules":
+        out.update(type=r_type, confidence=r_conf, used="rules")
+        return out
+    from .doc_classifier import classify_embedding
+    m = classify_embedding(text)
+    out["model"] = m
+    if mode == "model":
+        out.update(type=m["type"], confidence=m["similarity"], used="model")
+    elif r_type != "unknown" and r_conf >= RULES_CONFIDENT:
+        out.update(type=r_type, confidence=r_conf, used="rules")
+    else:
+        out.update(type=m["type"], confidence=m["similarity"], used="model")
+    out["check"] = r_type != "unknown" and r_type != m["type"]
+    return out
+
+
 def group_documents(pages: list[dict]) -> list[dict]:
     docs = []
     for p in pages:
@@ -150,17 +181,33 @@ def group_documents(pages: list[dict]) -> list[dict]:
             docs[-1]["pages"].append(p["page"])
             p["doc_type"], p["doc_id"] = docs[-1]["type"], docs[-1]["doc_id"]
             continue
-        doc_type, conf = classify(text)
+        c = classify_page(text)
+        doc_type, conf = c["type"], c["confidence"]
         doc = {"doc_id": f"D{len(docs) + 1:02d}", "type": doc_type, "title": TYPE_TITLES.get(doc_type, doc_type),
-               "type_confidence": conf, "date": find_date(text), "issuer": find_issuer(text), "pages": [p["page"]]}
+               "type_confidence": conf, "classified_by": c["used"], "type_check": c["check"],
+               "rules_type": c["rules"]["type"], "model_type": c["model"]["type"] if c["model"] else None, "date": find_date(text), "issuer": find_issuer(text), "pages": [p["page"]]}
         docs.append(doc)
         p["doc_type"], p["doc_id"] = doc_type, doc["doc_id"]
     return docs
 
 # ------------------------------------------------------------------ 4. extract
 
+from .drugs import ALIASES
 DRUG_LOWER = {d.lower(): d for d in DRUGS}
-DRUG_LOWER.update({"phenprocoumon": "Phenprocoumon", "marcumar": "Phenprocoumon"})
+DRUG_LOWER.update({a.lower(): inn for a, inn in ALIASES.items()})
+SINGLE_WORD = [k for k in DRUG_LOWER if " " not in k and "/" not in k]
+MULTI_WORD = re.compile("|".join(sorted((re.escape(k) for k in DRUG_LOWER if " " in k or "/" in k),
+                                        key=len, reverse=True)), re.IGNORECASE)
+# sections in letters: medication and diagnoses are listed under these headings
+MED_HEADINGS = re.compile(r"^\W*(Therapie|Medikation\w*|Aktuelle Medikation|Entlassungsmedikation|"
+                          r"Medikation bei Entlassung|Dauermedikation|Medikamente)\b\s*:?\s*$", re.IGNORECASE)
+DX_HEADINGS = re.compile(r"^\W*((Haupt|Neben|Dauer)?[Dd]iagnosen?|Vorerkrankungen|Diagnoseliste)\b\s*:?\s*$")
+ANY_HEADING = re.compile(r"^\W*(Anamnese|Befund\w*|Verlauf|Procedere|Empfehlung\w*|Beurteilung|Epikrise|"
+                         r"Therapie|Medikation\w*|Diagnosen?|Allergien|Labor\w*|Mit freundlichen|Sozialanamnese|"
+                         r"Körperlicher Untersuchungsbefund|Aufnahmebefund)\b", re.IGNORECASE)
+BULLET = re.compile(r"^\s*[*•·°»\-–—>]\s*")
+AS_NEEDED_RX = re.compile(r"\bb\.\s?B\.|\bbei Bedarf\b|\bbei (schwer\w*|starke\w*)?\s*(Hypo\w*|Schmerz\w*|Atemnot|"
+                          r"Übelkeit|Unruhe|Fieber|Schlaflosigkeit)", re.IGNORECASE)
 ANTICOAGULANTS = {"Apixaban", "Rivaroxaban", "Edoxaban", "Dabigatran", "Phenprocoumon"}
 STATUS_WORDS = {"stopped": ["abgesetzt", "beendet", "gestoppt", "abgeseizt"], "paused": ["pausiert"],
                 "new": ["angesetzt", "begonnen", "neu"]}
@@ -175,8 +222,13 @@ WORD = re.compile(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]+")
 
 def find_drugs(line: str) -> list[tuple[str, int]]:
     """Known drug names in a line (OCR-tolerant), with their character position."""
-    found = []
+    found, taken = [], []
+    for m in MULTI_WORD.finditer(line):                # "Insulin lispro", "Sacubitril/Valsartan"
+        found.append((DRUG_LOWER[m.group(0).lower()], m.start()))
+        taken.append((m.start(), m.end()))
     for m in WORD.finditer(line):
+        if any(a <= m.start() < b for a, b in taken):
+            continue
         tok = m.group(0).lower().strip("-")
         if len(tok) < 3:
             continue
@@ -184,10 +236,10 @@ def find_drugs(line: str) -> list[tuple[str, int]]:
             found.append((DRUG_LOWER[tok], m.start()))
             continue
         if len(tok) >= 6:
-            best = max(DRUG_LOWER, key=lambda d: fuzz.ratio(tok, d))
-            if fuzz.ratio(tok, best) >= 85:
-                found.append((DRUG_LOWER[best], m.start()))
-    return found
+            best = process.extractOne(tok, SINGLE_WORD, scorer=fuzz.ratio, score_cutoff=85)
+            if best:
+                found.append((DRUG_LOWER[best[0]], m.start()))
+    return sorted(found, key=lambda x: x[1])
 
 
 def line_status(line: str) -> str | None:
@@ -211,10 +263,19 @@ def extract_page(p: dict) -> dict:
     facts = {"meds": [], "diagnoses": [], "labs": [], "cave": [], "contacts": [], "negatives": [], "findings": []}
     doc_type, page = p.get("doc_type"), p["page"]
     previous = ""
+    section = None                                   # "meds" | "dx" | None, from the headings in a letter
     for l in p["lines"]:
         text, conf = l["text"], l["conf"]
         low = text.lower()
         src = {"page": page, "doc_id": p.get("doc_id"), "source_text": text}
+        if MED_HEADINGS.match(text):
+            section = "meds"
+            continue
+        if DX_HEADINGS.match(text):
+            section = "dx"
+            continue
+        if ANY_HEADING.match(text) and not BULLET.match(text):
+            section = None
 
         # medications (table rows and prose)
         drugs = find_drugs(text)
@@ -222,14 +283,34 @@ def extract_page(p: dict) -> dict:
         for i, (drug, pos) in enumerate(drugs):
             end = drugs[i + 1][1] if i + 1 < len(drugs) else len(text)
             segment = text[pos:end]
-            near = segment[:35]                      # strength must sit right after the name
+            near = re.sub(r"(\d)\s*pg\b", r"\1 µg", segment[:35])   # OCR reads µg as pg
             s, d = STRENGTH.search(near), DOSING.search(near)
             if s and s.group(2).lower() == "ml":     # "eGFR unter 30 ml/min" is not a dose
                 s = None
             status = "stopped" if drug.lower() in switched else line_status(segment)
+            dosing = re.sub(r"\s+", "", d.group(0)) if d else ("bei Bedarf" if AS_NEEDED_RX.search(segment) else
+                                                               "Insulinpumpe" if "pumpe" in segment.lower() else None)
             facts["meds"].append({"name": drug, "strength": f"{s.group(1)} {s.group(2)}" if s else None,
-                                  "dosing": re.sub(r"\s+", "", d.group(0)) if d else None,
-                                  "status": status, "confidence": conf, **src})
+                                  "dosing": dosing, "status": status, "confidence": conf, **src})
+
+        # unknown drug in a medication section: keep it, flagged, instead of losing it silently
+        if section == "meds" and not drugs and BULLET.match(text):
+            item = BULLET.sub("", text)
+            s, d = STRENGTH.search(item), DOSING.search(item)
+            name = re.split(r"\s+\d|:|\(|\s(?:über|per|bei|nach|zur)\s", item)[0].strip(" ,;")
+            if (s or d or AS_NEEDED_RX.search(item)) and re.search(r"[A-Za-zÄÖÜäöü]{3,}", name) and len(name) <= 40:
+                facts["meds"].append({"name": name, "strength": f"{s.group(1)} {s.group(2)}" if s else None,
+                                      "dosing": re.sub(r"\s+", "", d.group(0)) if d else
+                                      ("bei Bedarf" if AS_NEEDED_RX.search(item) else None),
+                                      "status": line_status(item), "confidence": conf, "unknown": True, **src})
+
+        # diagnoses listed under a "Diagnosen" heading, without an ICD code
+        if section == "dx" and BULLET.match(text) and not ICD10.search(fix_icd(text)) and doc_type != "lab_report":
+            label = BULLET.sub("", text).strip(" -·:;,|").lstrip("(")
+            if label.count("(") > label.count(")"):
+                label += ")"
+            if len(label) >= 4:
+                facts["diagnoses"].append({"text": label, "icd10": None, **src})
 
         # diagnoses: every ICD code on the line, with the words in front of it
         fixed, prev = fix_icd(text), 0
@@ -328,7 +409,7 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
             status = "new"
         sources = sorted({m["page"] for m in recent})
         current.append({"name": name, "strength": latest["strength"], "dosing": latest["dosing"],
-                        "status": status, "sources": sources})
+                        "status": status, "sources": sources, "unknown": any(m.get("unknown") for m in mentions)})
         variants = {(_norm(m["strength"]), _norm(m["dosing"])) for m in concrete if m["strength"]}
         if len({v[0] for v in variants}) > 1:
             detail = " vs. ".join(f"{m['strength'] or '?'} {m['dosing'] or ''} (S. {m['page']}, {m['date'] or 'ohne Datum'})"
@@ -395,9 +476,9 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
 
     diags = {}
     for d in sorted(all_facts["diagnoses"], key=lambda d: d["date"] or "", reverse=True):
-        key = d["icd10"]
+        key = d["icd10"] or re.sub(r"\W+", "", d["text"].lower())[:40]
         if key not in diags:
-            diags[key] = {"text": d["text"], "icd10": key, "date": d["date"], "sources": set()}
+            diags[key] = {"text": d["text"], "icd10": d["icd10"], "date": d["date"], "sources": set()}
         diags[key]["sources"].add(d["page"])
 
     return {
@@ -431,7 +512,7 @@ def summary_text(s: dict) -> str:
     if s["findings"]:
         out.append("Befunde: " + "; ".join(f"{f['text']} {_src(f['sources'])}" for f in s["findings"]))
     if s["diagnoses"]:
-        out.append("Diagnosen: " + "; ".join(f"{d['text']} ({d['icd10']}) {_src(d['sources'])}" for d in s["diagnoses"][:8]))
+        out.append("Diagnosen: " + "; ".join(f"{d['text']}{' (' + d['icd10'] + ')' if d['icd10'] else ''} {_src(d['sources'])}" for d in s["diagnoses"][:8]))
     meds = [m for m in s["medications"] if m["status"] != "stopped"]
     if meds:
         out.append("Aktuelle Medikation: " + "; ".join(
@@ -465,6 +546,7 @@ def find_patient(pages: list[dict]) -> dict:
     if not votes:
         return {"name": None, "birth": None}
     (name, birth), _ = max(votes.items(), key=lambda kv: kv[1])
+    name = re.sub(r"^(Frau|Herrn?|Fr\.|Hr\.)\s+", "", name)
     return {"name": name, "birth": birth}
 
 
@@ -479,7 +561,7 @@ def page_facts(p: dict) -> list[dict]:
             elif kind == "meds":
                 label = " ".join(x for x in [f["name"], f.get("strength"), f.get("dosing"), f.get("status")] if x)
             elif kind == "diagnoses":
-                label = f"{f['text']} ({f['icd10']})"
+                label = f"{f['text']} ({f['icd10']})" if f['icd10'] else f['text']
             out.append({"kind": kind, "label": label, "source_text": f.get("source_text")})
     return out
 
