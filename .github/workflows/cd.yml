@@ -16,6 +16,8 @@ permissions:
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'get-well-ocr' }}
+  # Not secret (the role's trust policy only lets this repo in). The repo variable overrides the default.
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || 'arn:aws:iam::363183905530:role/gwo-github-deploy' }}
 
 jobs:
   build:
@@ -42,7 +44,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - id: ecr
@@ -69,13 +71,13 @@ jobs:
       cancel-in-progress: false
     env:
       IMAGE: ${{ needs.build.outputs.image }}
-      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || 'i-04b66c478838c965f' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Run deploy script on the instance (SSM)
