@@ -134,7 +134,7 @@ That's it. On the first start the launcher sets up everything by itself, then op
 3. installs Tesseract with German (brew / winget / apt / dnf), or downloads missing language data into `.tessdata/`
 4. creates `.env` from `.env.example`
 
-Later starts take a few seconds. Options: `--setup-only`, `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
+Later starts take a few seconds. Options: `--setup-only`, `--self-test` (also checks German OCR on a test page), `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
 
 Pipeline and test scripts (after the first start):
 

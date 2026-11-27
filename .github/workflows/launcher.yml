@@ -1,0 +1,50 @@
+# Proves the one-command launcher works on a fresh Windows and macOS machine:
+# setup from zero (venv, packages, Tesseract + German), German OCR on a test page,
+# a fast second start, and the app answering over HTTP.
+name: Launcher
+
+on:
+  push:
+    paths: [start.py, start.sh, start.bat, requirements.txt, .github/workflows/launcher.yml]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  launcher:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: First start (Windows) - set up everything + self-test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: start.bat --self-test
+
+      - name: First start (macOS) - set up everything + self-test
+        if: runner.os == 'macOS'
+        run: ./start.sh --self-test
+
+      - name: Second start is fast (nothing reinstalled)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then out=$(cmd //c start.bat --setup-only); else out=$(./start.sh --setup-only); fi
+          echo "$out"
+          echo "$out" | grep -q "Python packages are up to date."
+
+      - name: App starts and answers
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
+          $PY start.py --no-browser --port 8501 > app.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:8501/_stcore/health && break
+            sleep 2
+          done
+          cat app.log
+          curl -sf http://localhost:8501/_stcore/health
+          curl -sf http://localhost:8501/ | grep -qi streamlit
