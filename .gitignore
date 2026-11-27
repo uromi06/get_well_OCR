@@ -1,5 +1,5 @@
 # .env is committed on purpose: the public repo runs right after cloning (fictional data only).
-
+.env
 
 # Anything real or private stays on your laptop only
 data/private/
