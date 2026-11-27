@@ -1,4 +1,4 @@
-# .env is committed on purpose (team keys, private repo). Keep the repo private.
+# .env is committed on purpose: the public repo runs right after cloning (fictional data only).
 
 
 # Anything real or private stays on your laptop only
