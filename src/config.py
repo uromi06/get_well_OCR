@@ -43,6 +43,9 @@ AZURE_DI_KEY = os.getenv("AZURE_DI_KEY", "")
 # Page extraction: local rules by default, or Mistral with a rules fallback
 EXTRACTOR = os.getenv("EXTRACTOR", "rules").lower()   # rules | llm
 
+# UI: debug view (OCR engine, scores, case IDs, raw text …) on by default? Switchable in the app (⚙).
+DEBUG_VIEW = os.getenv("DEBUG_VIEW", "0").strip().lower() in ("1", "true", "yes", "on")
+
 # Review: fields below this confidence are flagged for the doctor to check
 LOW_CONFIDENCE = 0.80
 
