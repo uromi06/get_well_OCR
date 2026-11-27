@@ -2,7 +2,7 @@
  * API calls and page images are never cached: patient data stays on the server only.
  * Bump VERSION when the shell changes, so phones pick up the new files.
  */
-const VERSION = "gwo-pwa-v4";
+const VERSION = "gwo-pwa-v5";
 const SHELL = ["/", "/index.html", "/app.js", "/styles.css", "/manifest.webmanifest",
   "/icons/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
 
