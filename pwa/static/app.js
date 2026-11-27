@@ -279,15 +279,256 @@ function profileSheet(list) {
   });
 }
 
+// ------------------------------------------------------------------ Blatt-Erkennung (OpenCV.js)
+// Finds the sheet of paper in a camera frame or photo and cuts it out, straightened like a scan.
+// OpenCV.js (~10 MB, pwa/static/vendor) is loaded only when the scan screen opens; the service worker
+// keeps it afterwards. Without it everything works as before, just without frame and crop.
+
+const DOC = { cv: null, loading: null };
+
+// Resolves to true once DOC.cv is ready. Never resolve a promise WITH the cv object: it has its own
+// then() (Emscripten module), so the promise would adopt it again and again and freeze the page.
+function loadOpenCV() {
+  if (DOC.cv) return Promise.resolve(true);
+  if (DOC.loading) return DOC.loading;
+  DOC.loading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "/vendor/opencv.js";
+    s.async = true;
+    s.onerror = () => reject(new Error("OpenCV.js konnte nicht geladen werden"));
+    s.onload = async () => {
+      try {
+        let c = window.cv;
+        if (c instanceof Promise) c = await new Promise((ok, fail) => c.then((m) => ok({ m }), fail)).then((x) => x.m);
+        if (!c || !c.Mat) {                               // older builds: wait for the WebAssembly runtime
+          await new Promise((ok, fail) => {
+            const t0 = Date.now();
+            c.onRuntimeInitialized = ok;
+            (function poll() { if (c.Mat) return ok(); if (Date.now() - t0 > 20000) return fail(new Error("OpenCV.js startet nicht")); setTimeout(poll, 100); })();
+          });
+        }
+        DOC.cv = c;
+        resolve(true);
+      } catch (e) { reject(e); }
+    };
+    document.head.appendChild(s);
+  });
+  DOC.loading.catch(() => { DOC.loading = null; });
+  return DOC.loading;
+}
+
+// Corners in order top-left, top-right, bottom-right, bottom-left
+function orderCorners(pts) {
+  const bySum = [...pts].sort((a, b) => a.x + a.y - (b.x + b.y));
+  const byDiff = [...pts].sort((a, b) => a.y - a.x - (b.y - b.x));
+  return [bySum[0], byDiff[0], bySum[3], byDiff[3]];
+}
+
+/* The sheet of paper in the picture: a 4-cornered shape covering minArea..90 % of it whose four sides
+ * really lie on edges in the picture. source: video, image, canvas or ImageBitmap with its size sw x sh.
+ * Returns corners in source pixels, or null.
+ *
+ * Just taking the biggest outline is wrong in a real room: all the edges of the background grow together
+ * and their outline is almost the whole picture. So every candidate must be (1) nearly convex, (2) a real
+ * quadrilateral with sane angles and (3) supported by edge pixels along each of its sides. The outline of
+ * a messy blob fails (3): its sides bridge gaps where there is no edge. Inner outlines count too
+ * (RETR_LIST): the white of the page between its border and the text stays a clean shape even when the
+ * border touches the background clutter. */
+function findSheet(source, sw, sh, minArea = 0.2) {
+  const cv = DOC.cv;
+  if (!cv || !sw || !sh) return null;
+  const scale = Math.min(1, 400 / Math.max(sw, sh));
+  const w = Math.round(sw * scale), h = Math.round(sh * scale);
+  const small = findSheet.canvas || (findSheet.canvas = document.createElement("canvas"));
+  small.width = w; small.height = h;
+  small.getContext("2d", { willReadFrequently: true }).drawImage(source, 0, 0, w, h);
+  const mats = [];
+  const keep = (m) => (mats.push(m), m);
+  try {
+    const src = keep(cv.imread(small));
+    const gray = keep(new cv.Mat());
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+    const k3 = keep(cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3)));
+    const k5 = keep(cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5)));
+    // [mask to take outlines from, mask the sides must lie on]
+    const pairs = [];
+    for (const [lo, hi] of [[40, 120], [10, 30]]) {     // normal edges, then faint ones (white paper on a light table)
+      const edges = keep(new cv.Mat());
+      cv.Canny(gray, edges, lo, hi);
+      cv.dilate(edges, edges, k3);
+      if (cv.countNonZero(edges) > 0.45 * w * h) continue;   // edges everywhere (noise, carpet): says nothing
+      const support = keep(new cv.Mat());
+      cv.dilate(edges, support, k5);                    // a few pixels of tolerance for the side check
+      // Close outlines that run out of the picture (sheet held close): the picture border acts as an edge
+      cv.rectangle(edges, new cv.Point(0, 0), new cv.Point(w - 1, h - 1), new cv.Scalar(255), 1);
+      pairs.push([edges, support]);
+    }
+    // And the paper itself: light and colourless (the smallest of R, G, B is high). Opening cuts thin
+    // bridges to other light things, closing fills the text. Works close up, where the sheet fills the
+    // picture and its outline is hidden by hand and picture border. Its sides must lie on the rim of that area.
+    {
+      const ch = keep(new cv.MatVector());
+      cv.split(src, ch);
+      const r = keep(ch.get(0)), g = keep(ch.get(1)), bl = keep(ch.get(2));
+      const white = keep(new cv.Mat());
+      cv.min(r, g, white);
+      cv.min(white, bl, white);
+      cv.GaussianBlur(white, white, new cv.Size(5, 5), 0);
+      const paper = keep(new cv.Mat());
+      cv.threshold(white, paper, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      const k9 = keep(cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(9, 9)));
+      cv.morphologyEx(paper, paper, cv.MORPH_OPEN, k5);
+      cv.morphologyEx(paper, paper, cv.MORPH_CLOSE, k9);
+      const rim = keep(new cv.Mat());
+      cv.morphologyEx(paper, rim, cv.MORPH_GRADIENT, k3);
+      cv.dilate(rim, rim, k5);
+      pairs.push([paper, rim]);
+    }
+    const sideSupport = (mask, a, b) => {               // share of the side a-b (without its ends) lying on the mask
+      let hit = 0;
+      const n = 24;
+      for (let i = 0; i < n; i++) {
+        const t = 0.1 + 0.8 * (i / (n - 1));
+        const x = Math.round(a.x + (b.x - a.x) * t), y = Math.round(a.y + (b.y - a.y) * t);
+        if (x >= 0 && y >= 0 && x < w && y < h && mask.ucharAt(y, x)) hit++;
+      }
+      return hit / n;
+    };
+    const angleOk = (q) => q.every((p, i) => {          // every corner between 50 and 130 degrees
+      const a = q[(i + 3) % 4], b = q[(i + 1) % 4];
+      const v1 = [a.x - p.x, a.y - p.y], v2 = [b.x - p.x, b.y - p.y];
+      const cos = (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(...v1) * Math.hypot(...v2) || 1);
+      return Math.abs(cos) < 0.64;
+    });
+    // A side along the picture border: the sheet goes on outside the picture there
+    const onBorder = (a, b) => (a.x <= 3 && b.x <= 3) || (a.y <= 3 && b.y <= 3) || (a.x >= w - 4 && b.x >= w - 4) || (a.y >= h - 4 && b.y >= h - 4);
+    const brighterInside = (q) => {                     // paper is lighter than what is around it
+      const m = cv.Mat.zeros(h, w, cv.CV_8UC1), pts = cv.matFromArray(4, 1, cv.CV_32SC2, q.flatMap((p) => [p.x, p.y]));
+      cv.fillConvexPoly(m, pts, new cv.Scalar(255));
+      const inside = cv.mean(gray, m)[0];
+      cv.bitwise_not(m, m);
+      const outside = cv.mean(gray, m)[0];
+      m.delete(); pts.delete();
+      return inside > outside + 8;
+    };
+    let best = null, bestScore = 0, bestCut = null, bestCutScore = 0;
+    const lo = minArea * w * h, hi = 0.97 * w * h;
+    for (const [mask, support] of pairs) {
+      const contours = keep(new cv.MatVector());
+      const hierarchy = keep(new cv.Mat());
+      cv.findContours(mask, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+      for (let i = 0; i < contours.size(); i++) {
+        const c = contours.get(i);
+        const area = cv.contourArea(c);
+        if (area >= lo && area <= hi) {
+          const hull = new cv.Mat(), approx = new cv.Mat();
+          cv.convexHull(c, hull);                         // the hull forgives a finger over the edge
+          const hullArea = cv.contourArea(hull);
+          if (hullArea <= hi && area >= 0.75 * hullArea) {  // nearly convex: a sheet, not a branching blob
+            const peri = cv.arcLength(hull, true);
+            for (const eps of [0.02, 0.03, 0.04, 0.055]) {  // looser until it has 4 corners
+              cv.approxPolyDP(hull, approx, eps * peri, true);
+              if (approx.rows <= 4) break;
+            }
+            if (approx.rows === 4 && cv.contourArea(approx) >= 0.88 * hullArea) {
+              const d = approx.data32S;
+              const q = orderCorners([0, 1, 2, 3].map((k) => ({ x: d[2 * k], y: d[2 * k + 1] })));
+              if (angleOk(q)) {
+                // Sides inside the picture must lie on edges; one may be half hidden by a hand. Sides on
+                // the picture border are free, but then at least two real sides must be there, the sheet
+                // must be lighter than the rest and must not be the whole picture.
+                const real = q.map((p, k) => [p, q[(k + 1) % 4]]).filter(([a, b]) => !onBorder(a, b));
+                const sup = real.map(([a, b]) => sideSupport(support, a, b));
+                const mean = sup.reduce((a, v) => a + v, 0) / (sup.length || 1);
+                const cut = real.length < 4;
+                const ok = cut
+                  ? hullArea >= 0.25 * w * h && real.length >= 2 && mean >= 0.7 && Math.min(...sup) >= 0.5 && brighterInside(q)
+                  : hullArea <= 0.92 * w * h && mean >= 0.7 && Math.min(...sup) >= 0.35;
+                if (ok) {
+                  const score = hullArea * mean;
+                  if (cut) { if (score > bestCutScore) { bestCutScore = score; bestCut = q; } }
+                  else if (score > bestScore) { bestScore = score; best = q; }
+                }
+              }
+            }
+          }
+          hull.delete(); approx.delete();
+        }
+        c.delete();
+      }
+    }
+    best = best || bestCut;                             // a sheet seen whole beats one that leaves the picture
+    if (!best) return null;
+    // A little margin outwards (2 % of the size, clamped to the picture): better a strip of table than cut-off text
+    const cx = best.reduce((a, p) => a + p.x, 0) / 4, cy = best.reduce((a, p) => a + p.y, 0) / 4;
+    return best.map((p) => ({
+      x: Math.min(sw - 1, Math.max(0, (cx + (p.x - cx) * 1.02) / scale)),
+      y: Math.min(sh - 1, Math.max(0, (cy + (p.y - cy) * 1.02) / scale)),
+    }));
+  } catch {
+    return null;
+  } finally {
+    mats.forEach((m) => m.delete());
+  }
+}
+
+/* Cut the sheet out of a full-size canvas and straighten it. Returns a new canvas. */
+function warpSheet(canvas, q) {
+  const cv = DOC.cv;
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  let W = Math.max(d(q[2], q[3]), d(q[1], q[0])), H = Math.max(d(q[1], q[2]), d(q[0], q[3]));
+  const s = Math.min(1, 2500 / Math.max(W, H));
+  W = Math.round(W * s); H = Math.round(H * s);
+  const mats = [];
+  const keep = (m) => (mats.push(m), m);
+  try {
+    const src = keep(cv.imread(canvas));
+    const from = keep(cv.matFromArray(4, 1, cv.CV_32FC2, q.flatMap((p) => [p.x, p.y])));
+    const to = keep(cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, W - 1, 0, W - 1, H - 1, 0, H - 1]));
+    const M = keep(cv.getPerspectiveTransform(from, to));
+    const dst = keep(new cv.Mat());
+    cv.warpPerspective(src, dst, M, new cv.Size(W, H), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+    const out = document.createElement("canvas");
+    cv.imshow(out, dst);
+    return out;
+  } finally {
+    mats.forEach((m) => m.delete());
+  }
+}
+
+const canvasToFile = (canvas, name) => new Promise((ok) => canvas.toBlob((b) => ok(new File([b], name, { type: "image/jpeg" })), "image/jpeg", 0.92));
+
+/* Photo from the gallery or the phone's camera app: crop it if a sheet is clearly found, else keep it. */
+async function cropPhotoFile(file) {
+  if (!DOC.cv || !/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const s = Math.min(1, 3200 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close && bmp.close();
+    const q = findSheet(c, c.width, c.height, 0.3);    // stricter than live: nobody checked the frame
+    if (!q) return file;
+    return await canvasToFile(warpSheet(c, q), file.name.replace(/\.\w+$/, "") + "-zugeschnitten.jpg");
+  } catch {
+    return file;
+  }
+}
+
+window.GWO_DOC = { loadOpenCV, findSheet, warpSheet, cropPhotoFile };   // for testing in the console
+
 // ------------------------------------------------------------------ 2 · Scannen
 
 function stopCamera() {
   if (S.scan && S.scan.stream) S.scan.stream.getTracks().forEach((t) => t.stop());
-  if (S.scan) S.scan.stream = null;
+  if (S.scan) { S.scan.stream = null; S.scan.quad = null; }
+  cancelAnimationFrame(stopCamera.raf);
 }
 
 function viewScan() {
-  if (!S.scan) S.scan = { shots: [], stream: null, torch: false };
+  if (!S.scan) S.scan = { shots: [], stream: null, torch: false, quad: null, quadAt: 0, crop: localStorage.getItem("gwo-crop") !== "off" };
   const sc = S.scan;
   $app.innerHTML = `
     <div class="screen scan">
@@ -299,12 +540,17 @@ function viewScan() {
       <div class="viewfinder-wrap">
         <div class="viewfinder">
           <video id="video" playsinline muted autoplay hidden></video>
+          <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
           <div class="paper" id="paper">${[45, 30, 100, 92, 96, 70, 100, 88, 94, 60, 100, 82].map((w) => `<i style="width:${w}%"></i>`).join("")}</div>
           <div class="flash" id="flash"></div>
           <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
         </div>
       </div>
-      <div style="display:flex;justify-content:center;padding-bottom:14px"><span class="hint"><span class="dot"></span><span id="hint">Kamera wird gestartet …</span></span></div>
+      <div style="display:flex;justify-content:center;gap:8px;padding-bottom:14px;flex-wrap:wrap">
+        <span class="hint"><span class="dot"></span><span id="hint">Kamera wird gestartet …</span></span>
+        <button class="crop-toggle" id="camretry" aria-pressed="true" hidden>Kamera starten</button>
+        <button class="crop-toggle" id="crop" aria-pressed="${sc.crop}">Zuschnitt ${sc.crop ? "an" : "aus"}</button>
+      </div>
       <div class="shots" id="shots"></div>
       <div class="controls">
         <label class="gallery">Galerie<input id="gallery" type="file" multiple hidden accept="image/*,application/pdf,.heic,.heif"></label>
@@ -336,8 +582,25 @@ function viewScan() {
     if (sc.shots.length && !confirm(`${sc.shots.length} aufgenommene Seite(n) verwerfen?`)) return;
     discard(); go("#/");
   };
-  document.getElementById("gallery").onchange = (e) => { add([...e.target.files]); e.target.value = ""; };
-  document.getElementById("native").onchange = (e) => { add([...e.target.files]); e.target.value = ""; };
+  // Photos from the gallery or the phone's camera app: cut out the sheet too, if one is clearly found
+  const addPhotos = async (files) => {
+    if (!sc.crop) return add(files);
+    const hintEl = document.getElementById("hint"), before = hintEl.textContent;
+    hintEl.textContent = "Blatt wird zugeschnitten …";
+    try { await Promise.race([loadOpenCV(), new Promise((_, no) => setTimeout(no, 15000))]); } catch {}
+    const out = [];
+    for (const f of files) out.push(await cropPhotoFile(f));
+    if (document.getElementById("hint")) hintEl.textContent = before;
+    add(out);
+  };
+  document.getElementById("gallery").onchange = (e) => { addPhotos([...e.target.files]); e.target.value = ""; };
+  document.getElementById("native").onchange = (e) => { addPhotos([...e.target.files]); e.target.value = ""; };
+  document.getElementById("crop").onclick = (e) => {
+    sc.crop = !sc.crop;
+    localStorage.setItem("gwo-crop", sc.crop ? "on" : "off");
+    e.currentTarget.textContent = `Zuschnitt ${sc.crop ? "an" : "aus"}`;
+    e.currentTarget.setAttribute("aria-pressed", String(sc.crop));
+  };
   document.getElementById("done").onclick = () => {
     const files = sc.shots.map((s) => s.file);
     discard();
@@ -345,43 +608,124 @@ function viewScan() {
   };
   document.getElementById("shutter").onclick = async () => {
     if (!sc.stream || !video.videoWidth) return document.getElementById("native").click();   // no live camera: phone camera app
-    const canvas = document.createElement("canvas");
+    let canvas = document.createElement("canvas");
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext("2d").drawImage(video, 0, 0);
-    const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.92));
+    const quad = sc.quad && Date.now() - sc.quadAt < 700 ? sc.quad : null;   // only a frame seen just now
+    if (sc.crop && quad && DOC.cv) {
+      try { canvas = warpSheet(canvas, quad); } catch { /* keep the full picture */ }
+    }
     const flash = document.getElementById("flash");
     flash.classList.add("go"); requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove("go")));
-    add([new File([blob], `seite-${String(sc.shots.length + 1).padStart(2, "0")}.jpg`, { type: "image/jpeg" })]);
+    add([await canvasToFile(canvas, `seite-${String(sc.shots.length + 1).padStart(2, "0")}.jpg`)]);
+  };
+
+  // Live frame around the sheet: detect every ~150 ms on a small copy, draw on the overlay canvas.
+  // The video is shown with object-fit: cover, so video pixels are mapped onto the visible box.
+  const overlay = document.getElementById("overlay");
+  let misses = 0, lastRun = 0;
+  const drawQuad = (q) => {
+    const bw = overlay.clientWidth, bh = overlay.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (overlay.width !== Math.round(bw * dpr)) { overlay.width = Math.round(bw * dpr); overlay.height = Math.round(bh * dpr); }
+    const ctx = overlay.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, bw, bh);
+    document.querySelector(".viewfinder")?.classList.toggle("found", !!q);
+    if (!q) return;
+    const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(bw / vw, bh / vh);
+    const ox = (bw - vw * s) / 2, oy = (bh - vh * s) / 2;
+    ctx.beginPath();
+    q.forEach((p, i) => ctx[i ? "lineTo" : "moveTo"](p.x * s + ox, p.y * s + oy));
+    ctx.closePath();
+    ctx.fillStyle = "rgba(152, 198, 234, 0.18)";
+    ctx.strokeStyle = "#98C6EA";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.fill();
+    ctx.stroke();
+  };
+  const tick = (now) => {
+    if (!sc.stream || !location.hash.startsWith("#/scan")) return;
+    stopCamera.raf = requestAnimationFrame(tick);
+    if (document.hidden || !DOC.cv || !video.videoWidth || now - lastRun < 150) return;
+    lastRun = now;
+    const q = findSheet(video, video.videoWidth, video.videoHeight, 0.1);   // a sheet held up to a webcam is small
+    const hintEl = document.getElementById("hint");
+    if (q) {
+      misses = 0;
+      // smooth the corners so the frame does not jitter
+      sc.quad = sc.quad ? q.map((p, i) => ({ x: sc.quad[i].x * 0.5 + p.x * 0.5, y: sc.quad[i].y * 0.5 + p.y * 0.5 })) : q;
+      sc.quadAt = Date.now();
+      if (hintEl) hintEl.textContent = "Blatt erkannt · ruhig halten";
+    } else if (++misses > 4) {
+      sc.quad = null;
+      if (hintEl) hintEl.textContent = "Seite ins Bild halten";
+    }
+    drawQuad(sc.quad);
   };
 
   // Live camera: needs HTTPS (or localhost). Otherwise the shutter opens the phone's camera app.
+  // Started in steps that each say what happens: preferred settings first, then any camera at all; if the
+  // browser does not answer (permission question hidden or dismissed, camera busy) a "Kamera starten"
+  // button appears, because a tap makes the browser ask again. The shutter always works without camera.
   const hint = document.getElementById("hint");
-  const fallback = (why) => { hint.textContent = why; };
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    fallback("Auslöser öffnet die Kamera-App");
-  } else {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1920 } }, audio: false })
-      .then((stream) => {
-        if (!location.hash.startsWith("#/scan")) { stream.getTracks().forEach((t) => t.stop()); return; }
-        sc.stream = stream;
-        video.srcObject = stream;
-        video.hidden = false;
-        document.getElementById("paper").hidden = true;
-        hint.textContent = "Seite ins Bild halten · ruhig halten";
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : {};
-        const torch = document.getElementById("torch");
-        if (caps.torch) {
-          torch.disabled = false;
-          torch.onclick = async () => {
-            sc.torch = !sc.torch;
-            try { await track.applyConstraints({ advanced: [{ torch: sc.torch }] }); torch.classList.toggle("on", sc.torch); }
-            catch { toast("Licht lässt sich nicht einschalten.", true); }
-          };
-        }
-      })
-      .catch(() => fallback("Auslöser öffnet die Kamera-App"));
-  }
+  const retry = document.getElementById("camretry");
+  const onScan = () => location.hash.startsWith("#/scan") && document.getElementById("hint") === hint;
+  const useStream = (stream) => {
+    if (!onScan() || sc.stream) { stream.getTracks().forEach((t) => t.stop()); return; }   // left the screen, or a second answer
+    sc.stream = stream;
+    video.srcObject = stream;
+    video.hidden = false;
+    video.play().catch(() => {});
+    document.getElementById("paper").hidden = true;
+    retry.hidden = true;
+    hint.textContent = "Seite ins Bild halten · ruhig halten";
+    cancelAnimationFrame(stopCamera.raf);
+    stopCamera.raf = requestAnimationFrame(tick);
+    loadOpenCV().catch(() => {});                       // only now: the big download must not delay the camera
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const torch = document.getElementById("torch");
+    if (caps.torch) {
+      torch.disabled = false;
+      torch.onclick = async () => {
+        sc.torch = !sc.torch;
+        try { await track.applyConstraints({ advanced: [{ torch: sc.torch }] }); torch.classList.toggle("on", sc.torch); }
+        catch { toast("Licht lässt sich nicht einschalten.", true); }
+      };
+    }
+  };
+  const startCamera = async () => {
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      hint.textContent = "Auslöser öffnet die Kamera-App";   // plain http on a phone: no live camera allowed
+      return;
+    }
+    retry.hidden = true;
+    hint.textContent = "Kamera wird gestartet …";
+    const slow = setTimeout(() => {
+      if (onScan() && !sc.stream) { hint.textContent = "Kamera antwortet nicht · Freigabe in der Adressleiste prüfen"; retry.hidden = false; }
+    }, 5000);
+    const wishes = [
+      { video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1920 } }, audio: false },
+      { video: true, audio: false },                    // any camera, any size
+    ];
+    let error = null;
+    for (const wish of wishes) {
+      try { useStream(await navigator.mediaDevices.getUserMedia(wish)); error = null; break; }
+      catch (e) { error = e; if (e && (e.name === "NotAllowedError" || e.name === "NotFoundError")) break; }
+    }
+    clearTimeout(slow);
+    if (!error || !onScan() || sc.stream) return;
+    console.warn("Kamera:", error.name, error.message);
+    hint.textContent = ({
+      NotAllowedError: "Kamera nicht freigegeben · in der Adressleiste erlauben",
+      NotReadableError: "Kamera wird von einem anderen Programm benutzt",
+      NotFoundError: "Keine Kamera gefunden · Auslöser öffnet die Dateiauswahl",
+    })[error.name] || `Kamera startet nicht (${error.name || "Fehler"})`;
+    retry.hidden = error.name === "NotFoundError";
+  };
+  retry.onclick = startCamera;
+  startCamera();
   renderShots();
 }
 
