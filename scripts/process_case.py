@@ -29,6 +29,9 @@ def print_score(sc: dict):
     for w in sc["misclassified"]:
         print(f"   page {w['page']}: predicted {w['predicted']}, truth {w['truth']}")
     print(f"Conflicts flagged: {sc['conflicts_flagged']} (answer file lists {sc['conflicts_truth']})")
+    print(f"Medication status (active vs stopped): {sc['meds_status_correct']}/{sc['meds_total']} correct")
+    for w in sc["meds_status_wrong"]:
+        print(f"   {w['name']}: predicted {w['predicted']}, truth {w['truth']}")
 
 
 def main():

@@ -1,0 +1,125 @@
+### **Übergabe-Zusammenfassung für die Notaufnahme**
+**Patientin:** Helga Beispiel, geb. 14.03.1948
+**Aufnahmegrund:** V. a. erneute kardiale Dekompensation bei bekannter Herzinsuffizienz (I50.13)
+
+---
+
+### **1. Mitgebrachte Dokumente**
+- **Entlassungsbrief Kardiologie** (10/2026) – stationärer Aufenthalt 06.10.–14.10.2026
+- **Medikationspläne** (Hausarzt, Kardiologie)
+- **Laborbefunde** (06.10.2026, 18.11.2026)
+- **Radiologische Befunde** (CT-Thorax 10/2026, Echokardiographie 10/2026)
+- **Operationsberichte** (Hüft-TEP rechts 03/2023, Schrittmacherimplantation 2019)
+- **Patientenverfügung & Vorsorgevollmacht** (06/2024)
+- **Pflegeüberleitungsbogen** (ambulanter Pflegedienst, 24.11.2026)
+- **Einweisungsschein Hausarzt** (25.11.2026)
+- **Allergiepass** (Penicillin-Allergie, 02/2022)
+
+---
+
+### **2. CAVE**
+- **Allergien:** Penicillin (makulopapulöses Exanthem 02/2022).
+- **Antikoagulation:**
+  - **Aktuell:** Apixaban 2,5 mg 1-0-1 (seit 10/2026, zuvor Phenprocoumon).
+  - **Hinweis:** INR-Schwankungen unter Phenprocoumon (zuletzt 1,6–3,9).
+- **Implantate:**
+  - VVI-Schrittmacher (2019, Kontrolle 01/2027 geplant).
+  - Zementierte Hüft-TEP rechts (03/2023).
+- **Patientenverfügung:**
+  - Keine Reanimation, keine Intubation/Beatmung.
+  - Nicht-invasive Maßnahmen (z. B. Sauerstoff) erwünscht.
+  - **Bevollmächtigte:** Tochter Sabine Beispiel (Tel. 0151 00000000).
+
+---
+
+### **3. Diagnosen**
+**Hauptdiagnosen:**
+1. **Akut dekompensierte Herzinsuffizienz** (HFmrEF, LVEF 40 %, I50.13).
+2. **Permanentes Vorhofflimmern** (CHA₂DS₂-VASc-Score 6, I48.2).
+3. **Chronische Niereninsuffizienz** (Stadium G4, eGFR 28 ml/min, N18.4).
+4. **Diabetes mellitus Typ 2** (E11.90, HbA1c 7,4 %).
+5. **Arterielle Hypertonie** (I10.90).
+6. **Mitralklappeninsuffizienz Grad II** (I34.0).
+
+**Nebendiagnosen/Vorgeschichte:**
+- Z. n. Hüft-TEP rechts (03/2023).
+- Z. n. Schrittmacherimplantation (2019).
+- Z. n. ambulant erworbener Pneumonie (02/2022).
+- Pulmonale Hypertonie (sPAP 48 mmHg).
+
+---
+
+### **4. Aktuelle Medikation**
+| **Wirkstoff**       | **Stärke** | **Dosierung**       | **Hinweise**                          |
+|---------------------|------------|---------------------|---------------------------------------|
+| Apixaban            | 2,5 mg     | 1-0-1-0             | **NEU** (seit 10/2026, statt Phenprocoumon). |
+| Bisoprolol          | 2,5 mg     | 1-0-0-0             |                                       |
+| Ramipril            | 2,5 mg     | 1-0-0-0             | Kalium kontrollieren (aktuell 5,3 mmol/l). |
+| Torasemid           | 20 mg      | 1-0-0-0             | Dosis erhöht (vorher 10 mg).          |
+| Empagliflozin       | 10 mg      | 1-0-0-0             | **NEU** (seit 10/2026).               |
+| Atorvastatin        | 20 mg      | 0-0-1-0             |                                       |
+| Metformin           | 500 mg     | 1-0-0-0             | **Reduziert** (eGFR 28 → Absetzen erwägen). |
+| Pantoprazol         | 20 mg      | 1-0-0-0             |                                       |
+| **Abgesetzt:**      |            |                     |                                       |
+| Phenprocoumon       | –          | –                   | Keine Überlappung mit Apixaban.       |
+| Glimepirid          | –          | –                   | **Abgesetzt** (Hypoglykämie-Risiko).  |
+
+---
+
+### **5. Labor**
+**Aktuellster Befund (18.11.2026):**
+| **Parameter**  | **Ergebnis** | **Einheit** | **Referenzbereich** | **Bewertung** |
+|----------------|--------------|-------------|---------------------|---------------|
+| Natrium        | 135          | mmol/l      | 136–145             | **↓**         |
+| Kalium         | 5,3          | mmol/l      | 3,5–5,1             | **↑**         |
+| Kreatinin      | 1,9          | mg/dl       | 0,5–0,9             | **↑**         |
+| eGFR           | 28           | ml/min      | > 60                | **↓** (G4)    |
+| Harnstoff      | 81           | mg/dl       | 17–43               | **↑**         |
+| NT-proBNP      | 4120         | pg/ml       | < 450               | **↑↑**        |
+| Hämoglobin     | 11,2         | g/dl        | 12,0–15,5           | **↓**         |
+
+**Vergleich 06.10.2026:**
+- Kreatinin: 1,6 → 1,9 mg/dl.
+- eGFR: 32 → 28 ml/min.
+- NT-proBNP: 2840 → 4120 pg/ml.
+
+---
+
+### **6. Anamnese**
+**Aktuelle Beschwerden:**
+- Seit 4 Tagen **zunehmende Belastungsdyspnoe** (NYHA III), **Orthopnoe**, **beidseitige Unterschenkelödeme**.
+- **Gewichtszunahme +3 kg** (aktuell 61 kg, zuvor 58 kg).
+- **SpO₂ 89 %** (Raumluft), **AF 22/min**.
+- Kein Thoraxschmerz, keine Synkope.
+
+**Vorgeschichte:**
+- **Herzinsuffizienz:** Erstdiagnose 10/2026, LVEF 40 %, Mitralinsuffizienz Grad II.
+- **Vorhofflimmern:** Permanent, CHA₂DS₂-VASc-Score 6 → Apixaban 2,5 mg 1-0-1.
+- **Nierenfunktion:** Progrediente Verschlechterung (eGFR 32 → 28 ml/min).
+- **Diabetes:** HbA1c 7,4 %, Metformin reduziert (500 mg 1-0-0), Glimepirid abgesetzt (Hypoglykämie-Risiko).
+- **Schrittmacher:** VVI (2019), letzte Kontrolle 10/2026, nächste 01/2027.
+
+**Sozialanamnese:**
+- **Pflegegrad 2**, ambulant versorgt (Pflegedienst Sonnenschein).
+- **Mobilität:** Rollator, Sturzgefahr (Z. n. Hüft-TEP 2023).
+- **Bezugsperson:** Tochter Sabine Beispiel (bevollmächtigt).
+
+---
+
+### **7. Kontakt**
+- **Hausärztin:** Dr. med. A. Hausmann, Tel. 089 000000-1.
+- **Tochter/Bevollmächtigte:** Sabine Beispiel, Tel. 0151 00000000.
+- **Pflegedienst:** Sonnenschein, Tel. [nicht angegeben].
+- **Kardiologie (zuletzt):** Klinikum Musterstadt, Prof. Dr. F. Herzog.
+
+---
+**Empfehlungen für die Notaufnahme:**
+- **Monitoring:** Rhythmus, SpO₂, Blutdruck, Gewicht.
+- **Labor:** Blutbild, Elektrolyte (v. a. Kalium), Kreatinin, eGFR, NT-proBNP, INR (falls Apixaban-Pause erwogen).
+- **Bildgebung:** Echokardiographie (Ausschluss Perikarderguss, LVEF), Röntgen-Thorax (Stauung?).
+- **Therapie:**
+  - **Diurese:** Torasemid 20 mg i.v. oder p.o. (ggf. Dosisanpassung).
+  - **Kalium:** Kontrolle, ggf. Resonium bei Hyperkaliämie.
+  - **Metformin:** Bei eGFR < 30 ml/min absetzen.
+  - **Antikoagulation:** Apixaban fortführen (keine Pause ohne Indikation).
+- **Weiteres Vorgehen:** Stationäre Aufnahme zur Rekompensation, ggf. kardiologische Mitbeurteilung.
