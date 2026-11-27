@@ -54,6 +54,7 @@ def main():
     for label, numerator, denominator in [
         ("Critical facts found", "needles_found", "needles_total"),
         ("Pages correct", "pages_correct", "pages_classified"),
+        ("Med status correct", "meds_status_correct", "meds_total"),
         ("Conflicts flagged/truth", "conflicts_flagged", "conflicts_truth"),
     ]:
         left, right = f"{a[numerator]}/{a[denominator]}", f"{b[numerator]}/{b[denominator]}"

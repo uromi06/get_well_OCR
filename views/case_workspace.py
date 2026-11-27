@@ -565,11 +565,51 @@ with tabs[5]:
                        "sources": [int(s) for s in re.findall(r"\d+", r["sources"])]} for r in review["meds"]]
     confirmed_summary = {**summary, "medications": confirmed_meds}
 
+    # ---- patient history as prose, written by Mistral Large 3 from the confirmed facts only
+    st.markdown("##### Anamnese als Fließtext (Mistral Large 3)")
+    hist = review.get("history_ai")
+    if not mistral.chat_available():
+        st.caption("Mistral Large 3 ist nicht eingerichtet (MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env). "
+                   "Der Übergabetext enthält dann die Anamnese als Liste nach Datum.")
+    else:
+        st.caption("Das Modell bekommt nur die geprüften Fakten dieses Falls, keine Fotos und keinen Rohtext. "
+                   "Jede Zahl und jedes Datum im Ergebnis wird gegen die Fakten geprüft.")
+        if st.button("✨ Anamnese mit Mistral formulieren", disabled=not ready, key=f"ai_{case_id}",
+                     help="Erst möglich, wenn alle Medikamente bestätigt sind."):
+            from src.history import write_history
+            with st.spinner("Mistral Large 3 formuliert …"):
+                try:
+                    h = write_history(result, confirmed_meds)
+                    review["history_ai"] = {"text": h["text"], "unsupported": h["unsupported"], "accepted": False}
+                    _save_review()
+                    st.rerun()
+                except mistral.MistralError as e:
+                    st.error(f"Mistral nicht erreichbar: {e}")
+        if hist:
+            from src.history import history_facts, unsupported_numbers
+            new_text = st.text_area("Text (bearbeitbar)", hist["text"], height=170, key=f"aitext_{case_id}")
+            if new_text != hist["text"]:
+                hist.update(text=new_text, accepted=False,
+                            unsupported=unsupported_numbers(new_text, history_facts(result, confirmed_meds)))
+                _save_review()
+            if hist["unsupported"]:
+                st.warning("Nicht in den geprüften Fakten belegt: " + ", ".join(hist["unsupported"]) +
+                           ". Bitte korrigieren oder entfernen.")
+            else:
+                st.success("Alle Zahlen und Daten im Text sind in den geprüften Fakten belegt.")
+            accepted = st.checkbox("Text geprüft und für den Übergabetext freigegeben",
+                                   value=bool(hist.get("accepted")), key=f"aiok_{case_id}")
+            if accepted != bool(hist.get("accepted")):
+                hist["accepted"] = accepted
+                _save_review()
+                st.rerun()
+    history_text = hist["text"] if hist and hist.get("accepted") else None
+
     rep_lang = st.segmented_control("Sprache des Übergabetexts", ["de", "en"], default="de",
                                     format_func={"de": "Deutsch", "en": "English"}.get, key=f"rl_{case_id}") or "de"
     with_src = st.toggle("Quellseiten [S. x] im Text anzeigen", value=False, key=f"src_{case_id}")
     er_text = er_report(result, confirmed_meds, rep_lang, confirmed=ready, reviewer=review.get("reviewer", ""),
-                        resolved=review["conflicts_ok"], show_sources=with_src)
+                        resolved=review["conflicts_ok"], show_sources=with_src, history_text=history_text)
     stamp = f"{datetime.now():%Y%m%d-%H%M}"
 
     st.markdown("##### Übergabetext für das Krankenhaussystem")

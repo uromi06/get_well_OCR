@@ -29,7 +29,7 @@ OCR_WORKERS = max(1, int(os.getenv("OCR_WORKERS", "2") or 2))
 # Mistral on Azure AI Foundry (EU region, provided by the hackathon)
 #   OCR:  Mistral Document AI if MISTRAL_OCR_ENDPOINT is set and deployed, else Mistral Large 3 reads
 #         the page image via the chat endpoint + MISTRAL_API_KEY. Returns Markdown per page
-#   Chat: Mistral Large 3 (OpenAI-compatible), optional extraction
+#   Chat: Mistral Large 3 (OpenAI-compatible), optional extraction and patient history
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
 MISTRAL_CHAT_ENDPOINT = os.getenv("MISTRAL_CHAT_ENDPOINT", "").strip()
 MISTRAL_CHAT_MODEL = os.getenv("MISTRAL_CHAT_MODEL", "Mistral-Large-3").strip()
