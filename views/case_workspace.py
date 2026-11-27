@@ -86,10 +86,10 @@ with st.sidebar:
     engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
                       index=1 if config.OCR_ENGINE == "mistral" else 0,
                       format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
-                      help="Tesseract läuft offline auf diesem Rechner. Mistral Document AI (Azure, EU-Region "
+                      help="Tesseract läuft offline auf diesem Rechner. Mistral (Azure, EU-Region "
                            "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
     if engine == "mistral" and not mistral.ocr_available():
-        st.warning("Mistral OCR: MISTRAL_OCR_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
+        st.warning("Mistral OCR: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
     extractor = st.radio("Auswertung", ["rules", "llm"], horizontal=True,
                          index=1 if config.EXTRACTOR == "llm" else 0,
                          format_func={"rules": "Regeln", "llm": "KI (Mistral Large 3)"}.get,
