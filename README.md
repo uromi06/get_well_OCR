@@ -39,6 +39,18 @@ curl.exe -F "files=@page1.jpg" -F "files=@page2.jpg" http://localhost:8000/ocr
 and returns the extracted text: `text` (all pages) plus per page `text`, `lines` (with confidence and position) and `quality`.
 Nothing is stored. `GET /health` for monitoring.
 
+### Docker
+
+```powershell
+docker build -t get-well-ocr .
+docker run -p 8000:8000 --env-file .env get-well-ocr          # API on :8000
+docker run -p 8501:8501 --env-file .env get-well-ocr streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+The image includes Tesseract (deu+eng). Secrets come from `--env-file`, never from the image.
+To keep uploaded cases and the OCR cache, mount volumes on `/app/data/private`, `/app/outputs` and `/app/cache`.
+More API processes: `-e WEB_CONCURRENCY=2`.
+
 Put the Azure endpoint and key in `.env` (never commit it).
 
 ## Test data

@@ -1,0 +1,25 @@
+# Secrets: pass them at runtime (--env-file .env), never bake them into the image
+.env
+.env.*
+!.env.example
+
+# Private data and generated files
+data/private/
+data/degraded/
+data/cases/*/stress/
+cache/*
+!cache/.gitkeep
+outputs/*
+!outputs/figures/.gitkeep
+
+# Local tooling
+.git/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
+.claude/
+Dockerfile
+.dockerignore
+setup_windows.ps1
