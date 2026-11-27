@@ -4,6 +4,12 @@ Flow on screen (mirrors the pipeline):
   sidebar   pick or create a case · choose the OCR engine · process
   header    patient, case, key numbers
   tabs      ER summary · Pages · Medication (doctor review) · Labs & findings · Documents · Export · Evaluation
+
+Debug view (⚙ in the sidebar, default DEBUG_VIEW in .env). Off = clinical view: technical details are hidden
+(OCR engine and extraction choice, case and document IDs, sharpness/confidence values and thresholds, raw OCR
+text, classifier details, Mistral setup warnings, test-case scores). Everything the doctor needs to verify the
+result stays visible in both modes: source pages, CAVE, conflicts, warnings, AI corrections, facts per page,
+page highlights, "please retake", document type disagreements, the doctor's own correction log.
 """
 from __future__ import annotations
 
@@ -91,6 +97,13 @@ def _scan_patient_id():
 
 
 with st.sidebar:
+    st.session_state.setdefault("debug_view", config.DEBUG_VIEW)
+    with st.popover("Einstellungen", icon=":material/settings:", use_container_width=True):
+        st.toggle("Debug-Ansicht", key="debug_view",
+                  help="Zeigt technische Details: Texterkennung und Auswertung wählen, Fall- und Dokument-IDs, "
+                       "Bildschärfe und Lesesicherheit, erkannten Rohtext, Klassifikator, Testfall-Auswertung. "
+                       "Alles, was für die ärztliche Prüfung nötig ist, bleibt immer sichtbar.")
+    debug = st.session_state.debug_view
     st.button("＋ Neuer Fall", type="primary" if st.session_state.case_id else "secondary",
               use_container_width=True, on_click=_new_case)
     def _label(c):
@@ -104,24 +117,27 @@ with st.sidebar:
                  index=ids.index(st.session_state.case_id) if st.session_state.case_id in ids else None,
                  placeholder="Fall auswählen …", on_change=_open_case)
 
-    st.markdown("### Verarbeitung")
-    engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
-                      index=1 if config.OCR_ENGINE == "mistral" else 0,
-                      format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
-                      help="Tesseract läuft offline auf diesem Rechner. Mistral (Azure, EU-Region "
-                           "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
-    if engine == "mistral" and not mistral.ocr_available():
-        st.warning("Mistral OCR: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
-    extractor = st.radio("Auswertung", ["rules", "llm"], horizontal=True,
-                         index=1 if config.EXTRACTOR == "llm" else 0,
-                         format_func={"rules": "Regeln", "llm": "KI (Mistral Large 3)"}.get,
-                         help="Regeln laufen lokal. Die KI sendet erkannte Textzeilen an Mistral (Azure, EU). "
-                              "Nur fiktive Daten verwenden und markierte Korrekturen am Original prüfen.")
-    if extractor == "llm" and not mistral.chat_available():
-        st.warning("Mistral-Auswertung: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen. "
-                   "Ohne KI-Ergebnis werden die Regeln verwendet.")
-    fresh = st.toggle("Texterkennung neu ausführen", value=False,
-                      help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).")
+    if debug:
+        st.markdown("### Verarbeitung")
+        engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
+                          index=1 if config.OCR_ENGINE == "mistral" else 0,
+                          format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
+                          help="Tesseract läuft offline auf diesem Rechner. Mistral (Azure, EU-Region "
+                               "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
+        if engine == "mistral" and not mistral.ocr_available():
+            st.warning("Mistral OCR: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
+        extractor = st.radio("Auswertung", ["rules", "llm"], horizontal=True,
+                             index=1 if config.EXTRACTOR == "llm" else 0,
+                             format_func={"rules": "Regeln", "llm": "KI (Mistral Large 3)"}.get,
+                             help="Regeln laufen lokal. Die KI sendet erkannte Textzeilen an Mistral (Azure, EU). "
+                                  "Nur fiktive Daten verwenden und markierte Korrekturen am Original prüfen.")
+        if extractor == "llm" and not mistral.chat_available():
+            st.warning("Mistral-Auswertung: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen. "
+                       "Ohne KI-Ergebnis werden die Regeln verwendet.")
+        fresh = st.toggle("Texterkennung neu ausführen", value=False,
+                          help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).")
+    else:                                 # clinical view: configured defaults, no technical choices
+        engine, extractor, fresh = config.OCR_ENGINE, config.EXTRACTOR, False
     run = st.button("▶ Fall erneut verarbeiten", use_container_width=True,
                     disabled=not st.session_state.case_id)
 
@@ -230,9 +246,9 @@ html_block(f"""
        <div class="who">{who or 'Patientendaten nicht erkannt'}</div></div>
   <div class="side">
     <span class="gw-tag {'fict' if not case['private'] else ''}">{'Fiktive Daten' if not case['private'] else 'Privater Fall'}</span>
-    {f'<span class="gw-tag">{esc(result["engine"])}</span>' if result else ''}
-    {f'<span class="gw-tag">{esc(extractor_label)}</span>' if result else ''}<br>
-    Fall {esc(case_id)}, {case['n_pages']} Seiten<br>
+    {f'<span class="gw-tag">{esc(result["engine"])}</span>' if result and debug else ''}
+    {f'<span class="gw-tag">{esc(extractor_label)}</span>' if result and debug else ''}<br>
+    {f'Fall {esc(case_id)}, ' if debug else ''}{case['n_pages']} Seiten<br>
     {('verarbeitet ' + esc(processed.replace('T', ' ')[:16])) if processed else 'noch nicht verarbeitet'}
   </div>
 </div>""")
@@ -247,7 +263,7 @@ if not result:
 
 summary, pages, docs = result["summary"], result["pages"], result["documents"]
 retake = [p for p in pages if p["status"] == "retake"]
-answers = json.loads(case["answers"].read_text(encoding="utf-8")) if case["answers"] else None
+answers = json.loads(case["answers"].read_text(encoding="utf-8")) if case["answers"] and debug else None
 score = score_case(result, answers) if answers else None
 
 # ------------------------------------------------------------------ doctor review state (persisted)
@@ -325,7 +341,7 @@ with tabs[0]:
             if len(corr) > 6:
                 with st.expander(f"Weitere {len(corr) - 6} KI-Korrekturen"):
                     html_block(correction_list(corr[6:]))
-        if summary.get("extract_errors"):
+        if summary.get("extract_errors") and debug:
             fallback_pages = ", ".join(str(e["page"]) for e in summary["extract_errors"])
             st.warning(f"Regelbasierte Auswertung für folgende Seiten, weil Mistral fehlgeschlagen ist: {fallback_pages}.")
         st.markdown("#### Zu klären")
@@ -380,7 +396,8 @@ with tabs[1]:
         with cols[i % 6]:
             st.image(thumbnail(str(f), f.stat().st_mtime), use_container_width=True)
             badge = (chip("NEU FOTOGRAFIEREN", "#b91c1c") if p["status"] == "retake" else doc_chip(p["doc_type"]))
-            html_block(f'<div class="gw-thumbcap"><b>S. {p["page"]}</b> · {p["doc_id"] or "–"}<br>{badge}</div>')
+            doc_ref = f' · {p["doc_id"] or "–"}' if debug else ""
+            html_block(f'<div class="gw-thumbcap"><b>S. {p["page"]}</b>{doc_ref}<br>{badge}</div>')
             if st.button("Öffnen", key=f"open_{case_id}_{p['page']}", use_container_width=True,
                          type="primary" if st.session_state[sel_key] == p["page"] else "secondary"):
                 st.session_state[sel_key] = p["page"]
@@ -398,7 +415,8 @@ with tabs[1]:
                                     default="Aufbereitet + Markierungen" if p["status"] == "done" else "Foto",
                                     key=f"view_{case_id}")
         if result["engine"] == "mistral":
-            st.caption("Mistral OCR liefert keine Positionen: Fundstellen sind rechts als Text aufgelistet.")
+            st.caption("Fundstellen sind bei dieser Texterkennung nicht im Bild markiert, sondern rechts "
+                       "als Text aufgelistet." + (" (Mistral OCR liefert keine Positionen.)" if debug else ""))
         if view == "Foto" or not ocr:
             st.image(str(f), use_container_width=True)
         else:
@@ -407,17 +425,22 @@ with tabs[1]:
             html_block(legend())
     with c2:
         if p["status"] == "retake":
-            reason = (f"zu unscharf (Schärfe {p['sharpness']} < {SHARPNESS_MIN})" if p["quality"] == "too_blurry"
-                      else f"Text kaum lesbar (Lesesicherheit {p['mean_confidence']:.2f} < {CONFIDENCE_MIN})")
+            if p["quality"] == "too_blurry":
+                reason = f"zu unscharf (Schärfe {p['sharpness']} < {SHARPNESS_MIN})" if debug else "zu unscharf"
+            else:
+                reason = (f"Text kaum lesbar (Lesesicherheit {p['mean_confidence']:.2f} < {CONFIDENCE_MIN})"
+                          if debug else "Text kaum lesbar")
             html_block(card("Bitte neu fotografieren", [esc(reason), "Seite wurde nicht ausgewertet."], "cave"))
         doc = next((d for d in docs if d["doc_id"] == p["doc_id"]), None)
-        info = [f"Dokument: <b>{esc(doc['title'])}</b> ({esc(doc['doc_id'])}), Seiten {', '.join(map(str, doc['pages']))}"
+        doc_ref = f" ({esc(doc['doc_id'])})" if doc and debug else ""
+        info = [f"Dokument: <b>{esc(doc['title'])}</b>{doc_ref}, Seiten {', '.join(map(str, doc['pages']))}"
                 if doc else "Dokument: –",
-                f"Datum: {esc(doc['date'] or 'nicht erkannt')}" if doc else "",
-                f"Bildschärfe: {p['sharpness']}  ·  Lesesicherheit: "
-                f"{p['mean_confidence'] if p['mean_confidence'] is not None else '–'}"]
-        if ocr:
-            info.append("Aufbereitung: " + esc(", ".join(s for s in ocr["steps"] if s != "gray")))
+                f"Datum: {esc(doc['date'] or 'nicht erkannt')}" if doc else ""]
+        if debug:
+            info.append(f"Bildschärfe: {p['sharpness']}  ·  Lesesicherheit: "
+                        f"{p['mean_confidence'] if p['mean_confidence'] is not None else '–'}")
+            if ocr:
+                info.append("Aufbereitung: " + esc(", ".join(s for s in ocr["steps"] if s != "gray")))
         html_block(card("Seiteninformation", [i for i in info if i], "info"))
         facts = p.get("facts", [])
         html_block(card(f"Gefunden auf dieser Seite ({len(facts)})",
@@ -425,7 +448,7 @@ with tabs[1]:
                         "info", "Keine strukturierten Fakten."))
         if p.get("corrections"):
             html_block(correction_list(p["corrections"]))
-        if ocr:
+        if ocr and debug:
             with st.expander("Erkannter Text"):
                 st.text("\n".join(l["text"] for l in ocr["lines"]))
 
@@ -497,25 +520,31 @@ with tabs[3]:
         html_block(card("Befunde", [f"{esc(f['text'])}{sources(f['sources'])}" for f in summary.get("findings", [])]))
         if summary.get("ignored"):
             html_block(card("Ignoriert (nicht medizinisch)",
-                            [f"{esc(i['doc_id'])}: Seiten {', '.join(map(str, i['pages']))}" for i in summary["ignored"]]))
+                            [f"{esc(i['doc_id']) + ': ' if debug else ''}Seiten {', '.join(map(str, i['pages']))}"
+                             for i in summary["ignored"]]))
 
 # ================================================================== tab: documents
 
 with tabs[4]:
     st.markdown("##### Zeitstrahl")
-    st.dataframe(pd.DataFrame([{"Datum": t["date"] or "–", "Dokument": t["text"], "ID": t["doc_id"],
+    st.dataframe(pd.DataFrame([{"Datum": t["date"] or "–", "Dokument": t["text"],
+                                **({"ID": t["doc_id"]} if debug else {}),
                                 "Seiten": ", ".join(map(str, t["pages"]))} for t in summary["timeline"]]),
                  hide_index=True, use_container_width=True)
     st.markdown("##### Dokumente")
     for d in docs:
-        with st.expander(f"{'⚠ ' if d.get('type_check') else ''}{d['doc_id']} · {d['title']} · {d['date'] or 'ohne Datum'} · "
-                         f"{len(d['pages'])} Seite(n)"):
-            how = {"rules": "Schlüsselwörter", "model": "Sprachmodell (Embedding)"}.get(d.get("classified_by"), "Regeln")
-            html_block(doc_chip(d["type"]) + f'<span class="gw-muted"> zugeordnet durch {how}, '
-                                             f'Sicherheit {d["type_confidence"]:.0%}</span>')
-            if d.get("type_check"):
-                st.warning(f"Regeln und Modell sind uneinig: Regeln = {DOC_TYPE_LABELS.get(d['rules_type'])}, "
-                           f"Modell = {DOC_TYPE_LABELS.get(d['model_type'])}. Bitte Dokumenttyp prüfen.")
+        with st.expander(f"{'⚠ ' if d.get('type_check') else ''}{d['doc_id'] + ' · ' if debug else ''}{d['title']} · "
+                         f"{d['date'] or 'ohne Datum'} · {len(d['pages'])} Seite(n)"):
+            if debug:
+                how = {"rules": "Schlüsselwörter", "model": "Sprachmodell (Embedding)"}.get(d.get("classified_by"), "Regeln")
+                html_block(doc_chip(d["type"]) + f'<span class="gw-muted"> zugeordnet durch {how}, '
+                                                 f'Sicherheit {d["type_confidence"]:.0%}</span>')
+            else:
+                html_block(doc_chip(d["type"]))
+            if d.get("type_check"):       # the doctor must check this, so it stays in both views
+                st.warning(f"Dokumenttyp unsicher: {DOC_TYPE_LABELS.get(d['rules_type'])} oder "
+                           f"{DOC_TYPE_LABELS.get(d['model_type'])}? Bitte Dokumenttyp prüfen."
+                           + (" (Regeln und Modell uneinig.)" if debug else ""))
             cols = st.columns(6)
             for i, pg in enumerate(d["pages"]):
                 f = case["pages_dir"] / pages[pg - 1]["file"]
