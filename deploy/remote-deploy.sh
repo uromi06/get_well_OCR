@@ -9,6 +9,7 @@
 # What runs afterwards:
 #   API (port 8000)        "gwo" systemd service from ec2-user-data.sh if installed, else container "gwo-api"
 #   Streamlit (port 8501)  container "gwo-app"
+#   PWA (port 8080)        container "gwo-pwa" (pwa/server.py: the PWA + the API endpoints)
 #
 # Settings for both come from /etc/gwo/env if it exists (root only, chmod 600), e.g.
 #   APP_USERNAME=...   APP_PASSWORD=...   (login of the Streamlit app, required by the app)
@@ -23,6 +24,8 @@ API=gwo-api
 API_PORT=8000
 APP=gwo-app
 APP_PORT=8501
+PWA=gwo-pwa
+PWA_PORT=8080
 VOLUMES=(-v gwo-private:/app/data/private -v gwo-outputs:/app/outputs -v gwo-cache:/app/cache)
 ENV_ARGS=()
 [ -f /etc/gwo/env ] && ENV_ARGS=(--env-file /etc/gwo/env)
@@ -39,6 +42,7 @@ wait_for() {
 }
 api_healthy() { wait_for "http://localhost:$API_PORT/health"; }
 app_healthy() { wait_for "http://localhost:$APP_PORT/_stcore/health"; }
+pwa_healthy() { wait_for "http://localhost:$PWA_PORT/health"; }
 
 running_image() { docker inspect --format '{{.Config.Image}}' "$1" 2>/dev/null || true; }
 
@@ -47,6 +51,14 @@ start_api() {
   docker run -d --name "$API" --restart unless-stopped \
     -p "$API_PORT":8000 "${ENV_ARGS[@]}" "${VOLUMES[@]}" \
     "$1" >/dev/null
+}
+
+# Container port 8000 on purpose: the image's HEALTHCHECK probes localhost:8000/health, which the PWA server has too
+start_pwa() {
+  docker rm -f "$PWA" >/dev/null 2>&1 || true
+  docker run -d --name "$PWA" --restart unless-stopped \
+    -p "$PWA_PORT":8000 "${ENV_ARGS[@]}" "${VOLUMES[@]}" \
+    "$1" uvicorn pwa.server:app --host 0.0.0.0 --port 8000 --proxy-headers >/dev/null
 }
 
 start_app() {
@@ -110,6 +122,23 @@ else
     log "app rolling back to $OLD_APP"
     start_app "$OLD_APP"
     app_healthy && log "app rollback healthy" || log "app rollback also unhealthy"
+  fi
+  exit 1
+fi
+
+# ---------- PWA ----------
+OLD_PWA=$(running_image "$PWA")
+log "PWA (container $PWA): ${OLD_PWA:-none} -> $IMAGE"
+start_pwa "$IMAGE"
+if pwa_healthy; then
+  log "PWA healthy on $IMAGE"
+else
+  log "PWA NOT healthy on $IMAGE (API and app already run the new version)"
+  docker logs --tail 50 "$PWA" || true
+  if [ -n "$OLD_PWA" ]; then
+    log "PWA rolling back to $OLD_PWA"
+    start_pwa "$OLD_PWA"
+    pwa_healthy && log "PWA rollback healthy" || log "PWA rollback also unhealthy"
   fi
   exit 1
 fi
