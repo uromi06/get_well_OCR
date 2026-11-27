@@ -18,6 +18,8 @@ const docChip = (t) => `<span class="chip" style="background:${esc(S.meta?.doc_t
 const statusLabel = (s) => S.meta?.statuses?.[s] || s;
 
 const ICON = {
+  rotate: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>`,
+  plus: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
   eye: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
   eyeOff: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>`,
   doc: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>`,
@@ -206,59 +208,76 @@ async function logout() {
 // ------------------------------------------------------------------ 1 · Übersicht
 
 async function viewHome() {
-  $app.innerHTML = `<div class="screen"><div class="head"><div class="muted">Fälle werden geladen …</div></div></div>`;
+  $app.innerHTML = `<div class="screen home"><div class="home-top"><span class="org">Fälle werden geladen …</span></div></div>`;
   const list = await api("/api/cases");
   const initials = (S.user || "?").split(/[\s._-]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   $app.innerHTML = `
-    <div class="screen">
-      <div class="head">
-        <div class="head-row">
-          <div><div class="eyebrow">Get Well OCR</div><h1 class="title">Fälle</h1></div>
-          <button class="avatar" id="me" aria-label="Profil und Einstellungen">${esc(initials)}</button>
+    <div class="screen home">
+      <div class="home-top">
+        <span class="org">Get Well OCR</span>
+        <button class="avatar" id="me" aria-label="Profil und Einstellungen">${esc(initials)}</button>
+      </div>
+      <div class="hero-wrap">
+        <div class="hero">
+          <div class="hero-doc" aria-hidden="true">
+            <div class="leaf">${[60, 100, 85, 92, 70].map((w) => `<i style="width:${w}%"></i>`).join("")}</div>
+            <span class="hc tl"></span><span class="hc tr"></span><span class="hc bl"></span><span class="hc br"></span>
+          </div>
+          <div class="hero-text"><h1>Unterlagen scannen</h1><p>Wichtiges ist in Sekunden kopierbereit.</p></div>
+          <a class="cta flat" href="#/scan">Kamera öffnen</a>
+          <label class="link-btn">oder Fotos / PDF importieren
+            <input id="import" type="file" multiple hidden accept="${esc(S.meta.upload_types.map((t) => "." + t).join(","))},image/*,application/pdf"></label>
         </div>
-        <div class="search">
+      </div>
+      <div class="recent">
+        <div class="recent-head"><h2>Zuletzt</h2><button class="text-btn" id="all" aria-expanded="false">Alle</button></div>
+        <div class="search" id="searchbox" hidden>
           <label for="q" class="sr-only">Fälle durchsuchen</label>${ICON.search}
           <input id="q" type="search" placeholder="Patient, Klinik oder Dokument">
         </div>
-      </div>
-      <div class="body" id="list"></div>
-      <div class="foot">
-        <a class="cta" href="#/scan">${ICON.scan}Unterlagen scannen</a>
-        <label class="link-btn">oder Fotos / PDF importieren
-          <input id="import" type="file" multiple hidden accept="${esc(S.meta.upload_types.map((t) => "." + t).join(","))},image/*,application/pdf"></label>
+        <div id="list"></div>
       </div>
     </div>`;
 
-  const render = (q) => {
-    const needle = q.trim().toLowerCase();
-    const shown = list.filter((c) => !needle || [c.patient, c.label, c.issuer, docLabel(c.doc_type)].some((v) => (v || "").toLowerCase().includes(needle)));
-    let html = "", last = null;
-    for (const c of shown) {
-      const group = dayLabel(c.created_at);
-      if (group !== last) { html += `<span class="section-label">${esc(group)}</span>`; last = group; }
+  let all = false;
+  const SHORT = 4;                                       // "Zuletzt" shows a few, "Alle" the whole list with search
+  const render = () => {
+    const needle = all ? document.getElementById("q").value.trim().toLowerCase() : "";
+    const found = list.filter((c) => !needle || [c.patient, c.label, c.issuer, docLabel(c.doc_type)].some((v) => (v || "").toLowerCase().includes(needle)));
+    const shown = all ? found : found.slice(0, SHORT);
+    document.getElementById("list").innerHTML = shown.map((c) => {
       const running = c.job && c.job.state === "running";
       const sub = c.processed
-        ? [c.issuer, c.doc_type ? docLabel(c.doc_type) : null].filter(Boolean).join(" · ") || `${c.n_docs} Dokumente`
+        ? [c.doc_type ? docLabel(c.doc_type) : null, c.issuer].filter(Boolean).join(" · ") || `${c.n_docs} Dokumente`
         : `${c.n_pages} Seiten · noch nicht ausgewertet`;
-      const right = running ? `<span class="pill">Analyse …</span>`
-        : c.created_at ? `<span class="time">${esc(timeLabel(c.created_at))}</span>` : `<span class="pill">Testfall</span>`;
-      html += `<a class="case-item" href="${running ? `#/analyse/${enc(c.id)}` : `#/case/${enc(c.id)}`}">
-          <div class="doc-icon">${ICON.doc}</div>
-          <div class="main"><span class="name">${esc(c.patient || c.label)}</span><span class="sub">${esc(sub)}</span></div>
-          ${right}</a>`;
-    }
-    document.getElementById("list").innerHTML = html || `<div class="empty">${needle ? "Nichts gefunden." : "Noch keine Fälle. Unterlagen scannen, um zu beginnen."}</div>`;
+      const day = dayLabel(c.created_at);
+      const when = !c.created_at ? "Testfall" : day === "Heute" ? timeLabel(c.created_at) : day === "Gestern" ? day
+        : new Date(c.created_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+      const right = running ? `<span class="pill">Analyse …</span>` : `<span class="time">${esc(when)}</span>`;
+      return `<a class="recent-row" href="${running ? `#/analyse/${enc(c.id)}` : `#/case/${enc(c.id)}`}">
+          <span class="main"><span class="name">${esc(c.patient || c.label)}</span><span class="sub">${esc(sub)}</span></span>${right}</a>`;
+    }).join("") || `<div class="empty">${needle ? "Nichts gefunden." : "Noch keine Fälle. Kamera öffnen, um zu beginnen."}</div>`;
+    document.getElementById("all").hidden = !all && list.length <= SHORT;
   };
-  document.getElementById("q").oninput = (e) => render(e.target.value);
+  document.getElementById("all").onclick = (e) => {
+    all = !all;
+    e.currentTarget.textContent = all ? "Weniger" : "Alle";
+    e.currentTarget.setAttribute("aria-expanded", String(all));
+    document.getElementById("searchbox").hidden = !all;
+    if (!all) document.getElementById("q").value = "";
+    render();
+  };
+  document.getElementById("q").oninput = render;
   document.getElementById("import").onchange = (e) => { if (e.target.files.length) uploadAndAnalyse([...e.target.files]); };
   document.getElementById("me").onclick = () => profileSheet(list);
-  render("");
+  render();
 }
 
 function profileSheet(list) {
   const priv = list.filter((c) => c.private).length;
   sheet(`Angemeldet als ${S.user}`, `
     ${S.install ? `<button class="btn primary" id="install">App installieren</button>` : ""}
+    <label class="check"><input type="checkbox" id="cropset" ${localStorage.getItem("gwo-crop") !== "off" ? "checked" : ""}> Blatt beim Scannen automatisch zuschneiden</label>
     <button class="btn" id="logout">Abmelden</button>
     <details><summary>Verlauf löschen (${priv})</summary>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
@@ -268,6 +287,7 @@ function profileSheet(list) {
       </div></details>
     <p class="muted" style="margin:0">Healthcare Hackathon Bayern 2026 · Demo mit fiktiven Daten</p>`, (el, close) => {
     el.querySelector("#logout").onclick = () => { close(); logout(); };
+    el.querySelector("#cropset").onchange = (e) => localStorage.setItem("gwo-crop", e.target.checked ? "on" : "off");
     const inst = el.querySelector("#install");
     if (inst) inst.onclick = async () => { S.install.prompt(); await S.install.userChoice; S.install = null; close(); };
     const sure = el.querySelector("#sure"), del = el.querySelector("#delall");
@@ -528,121 +548,272 @@ function stopCamera() {
 }
 
 function viewScan() {
-  if (!S.scan) S.scan = { shots: [], stream: null, torch: false, quad: null, quadAt: 0, crop: localStorage.getItem("gwo-crop") !== "off" };
+  if (!S.scan) S.scan = { shots: [], urls: new Set(), stream: null, torch: false, quad: null, quadAt: 0, retake: null, before: null,
+    auto: localStorage.getItem("gwo-auto") === "on", engine: S.meta.default_engine };
   const sc = S.scan;
+  const cropOn = () => localStorage.getItem("gwo-crop") !== "off";
   $app.innerHTML = `
     <div class="screen scan">
       <div class="bar">
         <button class="round" id="cancel" aria-label="Scan abbrechen">${ICON.close}</button>
-        <span class="page-no" id="pageno">Seite ${sc.shots.length + 1}</span>
+        <button class="auto-toggle" id="auto" aria-pressed="${sc.auto}">${sc.auto ? "Auto-Aufnahme an" : "Manuell"}</button>
         <button class="round" id="torch" aria-label="Licht einschalten" disabled>${ICON.bolt}</button>
       </div>
       <div class="viewfinder-wrap">
         <div class="viewfinder">
           <video id="video" playsinline muted autoplay hidden></video>
           <canvas id="overlay" class="overlay" aria-hidden="true"></canvas>
-          <div class="paper" id="paper">${[45, 30, 100, 92, 96, 70, 100, 88, 94, 60, 100, 82].map((w) => `<i style="width:${w}%"></i>`).join("")}</div>
-          <div class="flash" id="flash"></div>
-          <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <div class="paper" id="paper">${[45, 30, 100, 92, 96, 70, 100, 88, 94, 60].map((w) => `<i style="width:${w}%"></i>`).join("")}</div>
         </div>
       </div>
-      <div style="display:flex;justify-content:center;gap:8px;padding-bottom:14px;flex-wrap:wrap">
+      <div class="status" id="status">
         <span class="hint"><span class="dot"></span><span id="hint">Kamera wird gestartet …</span></span>
-        <button class="crop-toggle" id="camretry" aria-pressed="true" hidden>Kamera starten</button>
-        <button class="crop-toggle" id="crop" aria-pressed="${sc.crop}">Zuschnitt ${sc.crop ? "an" : "aus"}</button>
+        <button class="retry" id="camretry" hidden>Kamera starten</button>
+        <div class="snack" id="snack" role="status" hidden>
+          <span class="tick">${ICON.check}</span><span id="snacktext"></span>
+          <button id="undo">Rückgängig</button>
+        </div>
       </div>
       <div class="shots" id="shots"></div>
       <div class="controls">
         <label class="gallery">Galerie<input id="gallery" type="file" multiple hidden accept="image/*,application/pdf,.heic,.heif"></label>
-        <button class="shutter" id="shutter" aria-label="Foto aufnehmen"><span></span></button>
-        <button class="done-btn" id="done" disabled>Fertig</button>
+        <button class="shutter" id="shutter" aria-label="Seite aufnehmen"><span></span></button>
+        <button class="done-btn" id="done" disabled>Weiter</button>
       </div>
       <input id="native" type="file" accept="image/*" capture="environment" hidden>
+      <div class="flash" id="flash" aria-hidden="true"></div>
+      <div id="layer"></div>
     </div>`;
 
   const video = document.getElementById("video");
-  const renderShots = () => {
-    document.getElementById("shots").innerHTML = sc.shots.map((s, i) => s.url
-      ? `<img src="${s.url}" alt="Seite ${i + 1}">` : `<img src="/icons/icon-192.png" alt="Datei ${i + 1}">`).join("");
-    document.getElementById("pageno").textContent = `Seite ${sc.shots.length + 1}`;
+  const hint = document.getElementById("hint");
+  const layer = document.getElementById("layer");
+  const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+  let found = false, camText = "";                      // camText: what the camera start has to say, if anything
+
+  const showHint = () => {
+    hint.textContent = sc.retake !== null ? `Seite ${sc.retake + 1} neu aufnehmen`
+      : camText ? camText
+      : !sc.stream ? "Auslöser öffnet die Kamera-App"
+      : !found ? "Seite ins Bild halten"
+      : sc.auto ? "Blatt erkannt · wird automatisch aufgenommen"
+      : sc.shots.length ? "Nächste Seite oder „Weiter“" : "Blatt erkannt · jetzt auslösen";
+  };
+  const thumb = (s, i, cls) => `<button class="shot ${cls}" data-i="${i}" aria-label="Seite ${i + 1} ansehen">
+      ${s.url ? `<img src="${s.url}" alt="">` : `<span class="file">${ICON.docSmall}</span>`}<span class="num">${i + 1}</span></button>`;
+  const renderShots = (fresh = -1) => {
+    document.getElementById("shots").innerHTML = sc.shots.map((s, i) => thumb(s, i, i === fresh ? "new" : "")).join("");
     const done = document.getElementById("done");
     done.disabled = !sc.shots.length;
-    done.textContent = sc.shots.length ? `Fertig (${sc.shots.length})` : "Fertig";
+    done.textContent = sc.shots.length ? `Weiter (${sc.shots.length})` : "Weiter";
+    showHint();
   };
-  const add = (files) => {
-    for (const f of files) {
-      if (sc.shots.length >= S.meta.max_files) { toast(`Höchstens ${S.meta.max_files} Seiten.`, true); break; }
-      sc.shots.push({ file: f, url: f.type.startsWith("image/") && !/hei[cf]$/i.test(f.name) ? URL.createObjectURL(f) : null });
-    }
+  const makeShot = (f) => {
+    const url = f.type.startsWith("image/") && !/hei[cf]$/i.test(f.name) ? URL.createObjectURL(f) : null;
+    if (url) sc.urls.add(url);                          // all released together when the scan ends (undo may need them)
+    return { file: f, url };
+  };
+  // Short message with "Rückgängig": puts the list of pages back as it was before
+  const hideSnack = () => {
+    clearTimeout(hideSnack.timer);
+    const el = document.getElementById("snack");
+    if (!el) return;
+    el.hidden = true;
+    document.getElementById("status").classList.remove("has-snack");
+    sc.before = null;
+  };
+  const snack = (text, before) => {
+    document.getElementById("snacktext").textContent = text;
+    document.getElementById("snack").hidden = false;
+    document.getElementById("status").classList.add("has-snack");
+    sc.before = before;
+    clearTimeout(hideSnack.timer);
+    hideSnack.timer = setTimeout(hideSnack, 3000);
+  };
+  document.getElementById("undo").onclick = () => {
+    if (!sc.before) return;
+    sc.shots = sc.before;
+    hideSnack();
     renderShots();
   };
-  const discard = () => { sc.shots.forEach((s) => s.url && URL.revokeObjectURL(s.url)); stopCamera(); S.scan = null; };
+  const add = (files) => {
+    const before = sc.shots.slice();
+    if (sc.retake !== null && files.length) {            // replace the page chosen with "Neu aufnehmen"
+      const i = sc.retake;
+      sc.retake = null;
+      sc.shots[i] = makeShot(files[0]);
+      renderShots(i);
+      return snack(`Seite ${i + 1} ersetzt`, before);
+    }
+    let n = 0;
+    for (const f of files) {
+      if (sc.shots.length >= S.meta.max_files) { toast(`Höchstens ${S.meta.max_files} Seiten.`, true); break; }
+      sc.shots.push(makeShot(f));
+      n++;
+    }
+    renderShots(n === 1 ? sc.shots.length - 1 : -1);
+    if (n) snack(n === 1 ? `Seite ${sc.shots.length} gespeichert` : `${n} Seiten hinzugefügt`, before);
+  };
+  const discard = () => { sc.urls.forEach((u) => URL.revokeObjectURL(u)); clearTimeout(hideSnack.timer); stopCamera(); S.scan = null; };
 
   document.getElementById("cancel").onclick = () => {
     if (sc.shots.length && !confirm(`${sc.shots.length} aufgenommene Seite(n) verwerfen?`)) return;
     discard(); go("#/");
   };
+  document.getElementById("auto").onclick = (e) => {
+    sc.auto = !sc.auto;
+    localStorage.setItem("gwo-auto", sc.auto ? "on" : "off");
+    e.currentTarget.textContent = sc.auto ? "Auto-Aufnahme an" : "Manuell";
+    e.currentTarget.setAttribute("aria-pressed", String(sc.auto));
+    showHint();
+  };
   // Photos from the gallery or the phone's camera app: cut out the sheet too, if one is clearly found
   const addPhotos = async (files) => {
-    if (!sc.crop) return add(files);
-    const hintEl = document.getElementById("hint"), before = hintEl.textContent;
-    hintEl.textContent = "Blatt wird zugeschnitten …";
+    if (!cropOn()) return add(files);
+    camText = "Blatt wird zugeschnitten …"; showHint();
     try { await Promise.race([loadOpenCV(), new Promise((_, no) => setTimeout(no, 15000))]); } catch {}
     const out = [];
     for (const f of files) out.push(await cropPhotoFile(f));
-    if (document.getElementById("hint")) hintEl.textContent = before;
+    if (document.getElementById("hint") !== hint) return;   // left the screen meanwhile
+    camText = "";
     add(out);
   };
   document.getElementById("gallery").onchange = (e) => { addPhotos([...e.target.files]); e.target.value = ""; };
   document.getElementById("native").onchange = (e) => { addPhotos([...e.target.files]); e.target.value = ""; };
-  document.getElementById("crop").onclick = (e) => {
-    sc.crop = !sc.crop;
-    localStorage.setItem("gwo-crop", sc.crop ? "on" : "off");
-    e.currentTarget.textContent = `Zuschnitt ${sc.crop ? "an" : "aus"}`;
-    e.currentTarget.setAttribute("aria-pressed", String(sc.crop));
-  };
-  document.getElementById("done").onclick = () => {
-    const files = sc.shots.map((s) => s.file);
-    discard();
-    uploadAndAnalyse(files);
-  };
-  document.getElementById("shutter").onclick = async () => {
+
+  const capture = async () => {
     if (!sc.stream || !video.videoWidth) return document.getElementById("native").click();   // no live camera: phone camera app
+    buzz(35);
     let canvas = document.createElement("canvas");
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext("2d").drawImage(video, 0, 0);
     const quad = sc.quad && Date.now() - sc.quadAt < 700 ? sc.quad : null;   // only a frame seen just now
-    if (sc.crop && quad && DOC.cv) {
+    if (cropOn() && quad && DOC.cv) {
       try { canvas = warpSheet(canvas, quad); } catch { /* keep the full picture */ }
     }
     const flash = document.getElementById("flash");
     flash.classList.add("go"); requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove("go")));
-    add([await canvasToFile(canvas, `seite-${String(sc.shots.length + 1).padStart(2, "0")}.jpg`)]);
+    add([await canvasToFile(canvas, `seite-${String((sc.retake ?? sc.shots.length) + 1).padStart(2, "0")}.jpg`)]);
   };
+  document.getElementById("shutter").onclick = capture;
+
+  // ---------- one page large: retake, rotate or delete it
+  const rotate = async (i) => {
+    const bmp = await createImageBitmap(sc.shots[i].file);
+    const c = document.createElement("canvas");
+    c.width = bmp.height; c.height = bmp.width;
+    const ctx = c.getContext("2d");
+    ctx.translate(c.width, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(bmp, 0, 0);
+    sc.shots[i] = makeShot(await canvasToFile(c, sc.shots[i].file.name.replace(/\.\w+$/, "") + ".jpg"));
+  };
+  const openPage = (i) => {
+    const s = sc.shots[i];
+    layer.innerHTML = `
+      <div class="pageview" role="dialog" aria-modal="true" aria-label="Seitenvorschau">
+        <div class="bar">
+          <button class="round" data-act="close" aria-label="Vorschau schließen">${ICON.close}</button>
+          <span class="page-no">Seite ${i + 1} von ${sc.shots.length}</span>
+          <button class="round" data-act="rotate" aria-label="Seite drehen" ${s.url ? "" : "disabled"}>${ICON.rotate}</button>
+        </div>
+        <div class="big">${s.url ? `<img src="${s.url}" alt="Seite ${i + 1}">` : `<div class="file">${ICON.docSmall}<span>${esc(s.file.name)}</span></div>`}</div>
+        <div class="two">
+          <button class="ghost" data-act="retake">Neu aufnehmen</button>
+          <button class="del" data-act="delete">Löschen</button>
+        </div>
+      </div>`;
+    layer.querySelector("[data-act=close]").focus();
+    layer.querySelector(".pageview").onclick = async (e) => {
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (!act) return;
+      if (act === "rotate") {
+        try { await rotate(i); renderShots(); openPage(i); } catch { toast("Drehen nicht möglich.", true); }
+        return;
+      }
+      layer.innerHTML = "";
+      if (act === "retake") { sc.retake = i; showHint(); }
+      if (act === "delete") {
+        const before = sc.shots.slice();
+        buzz([20, 40, 20]);
+        sc.shots.splice(i, 1);
+        sc.retake = null;
+        renderShots();
+        snack(`Seite ${i + 1} gelöscht`, before);
+      }
+    };
+  };
+  document.getElementById("shots").onclick = (e) => { const b = e.target.closest(".shot"); if (b) openPage(+b.dataset.i); };
+
+  // ---------- "Weiter": check the pages in a sheet, then send them off
+  const engines = S.meta.engines.filter((e) => e.available);
+  const openReview = () => {
+    const n = sc.shots.length;
+    layer.innerHTML = `
+      <div class="review-back">
+        <div class="review" role="dialog" aria-modal="true" aria-label="Aufgenommene Seiten">
+          <span class="grip" aria-hidden="true"></span>
+          <div class="review-head"><h1>${n} ${n === 1 ? "Seite" : "Seiten"} aufgenommen</h1><button class="text-btn" data-act="edit">Bearbeiten</button></div>
+          <div class="review-pages">${sc.shots.map((s, i) => `<button class="tile" data-page="${i}" aria-label="Seite ${i + 1} ansehen">
+              ${s.url ? `<img src="${s.url}" alt="">` : `<span class="file">${ICON.docSmall}</span>`}</button>`).join("")}
+            ${n < S.meta.max_files ? `<button class="tile add" data-act="edit" aria-label="Weitere Seite aufnehmen">${ICON.plus}</button>` : ""}</div>
+          <div class="review-row">
+            <span class="badge">${ICON.server}</span>
+            <span class="main"><span class="name" id="engname">${esc(engineLabel(sc.engine))}</span><span class="sub">Texterkennung</span></span>
+            ${engines.length > 1 ? `<button class="text-btn" data-act="engine">Ändern</button>` : ""}
+          </div>
+          <div class="review-actions">
+            <button class="cta flat" data-act="go">Auswerten</button>
+            <button class="text-btn tall" data-act="edit">Weitere Seite scannen</button>
+          </div>
+        </div>
+      </div>`;
+    layer.querySelector("[data-act=go]").focus();
+    layer.querySelector(".review-back").onclick = (e) => {
+      if (e.target.classList.contains("review-back")) { layer.innerHTML = ""; return; }
+      const page = e.target.closest("[data-page]");
+      if (page) return openPage(+page.dataset.page);
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act === "edit") layer.innerHTML = "";
+      if (act === "engine") {
+        sc.engine = engines[(engines.findIndex((x) => x.id === sc.engine) + 1) % engines.length].id;
+        document.getElementById("engname").textContent = engineLabel(sc.engine);
+      }
+      if (act === "go") {
+        const files = sc.shots.map((s) => s.file), engine = sc.engine;
+        discard();
+        uploadAndAnalyse(files, engine);
+      }
+    };
+  };
+  document.getElementById("done").onclick = openReview;
 
   // Live frame around the sheet: detect every ~150 ms on a small copy, draw on the overlay canvas.
   // The video is shown with object-fit: cover, so video pixels are mapped onto the visible box.
   const overlay = document.getElementById("overlay");
   let misses = 0, lastRun = 0;
+  let lastQ = null, stillSince = 0, armed = true;       // auto capture: sheet held still, once per sheet
   const drawQuad = (q) => {
     const bw = overlay.clientWidth, bh = overlay.clientHeight, dpr = window.devicePixelRatio || 1;
     if (overlay.width !== Math.round(bw * dpr)) { overlay.width = Math.round(bw * dpr); overlay.height = Math.round(bh * dpr); }
     const ctx = overlay.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, bw, bh);
-    document.querySelector(".viewfinder")?.classList.toggle("found", !!q);
     if (!q) return;
     const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(bw / vw, bh / vh);
     const ox = (bw - vw * s) / 2, oy = (bh - vh * s) / 2;
+    const pts = q.map((p) => [p.x * s + ox, p.y * s + oy]);
     ctx.beginPath();
-    q.forEach((p, i) => ctx[i ? "lineTo" : "moveTo"](p.x * s + ox, p.y * s + oy));
+    pts.forEach(([x, y], i) => ctx[i ? "lineTo" : "moveTo"](x, y));
     ctx.closePath();
-    ctx.fillStyle = "rgba(152, 198, 234, 0.18)";
-    ctx.strokeStyle = "#98C6EA";
-    ctx.lineWidth = 3;
     ctx.lineJoin = "round";
+    ctx.fillStyle = "rgba(90, 162, 230, 0.10)";
     ctx.fill();
-    ctx.stroke();
+    ctx.strokeStyle = "rgba(90, 162, 230, 0.22)"; ctx.lineWidth = 11; ctx.stroke();   // soft halo
+    ctx.strokeStyle = "#5AA2E6"; ctx.lineWidth = 3; ctx.stroke();
+    for (const [x, y] of pts) {                         // corner handles
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI);
+      ctx.fillStyle = "#fff"; ctx.fill();
+      ctx.strokeStyle = "#5AA2E6"; ctx.lineWidth = 3; ctx.stroke();
+    }
   };
   const tick = (now) => {
     if (!sc.stream || !location.hash.startsWith("#/scan")) return;
@@ -650,17 +821,21 @@ function viewScan() {
     if (document.hidden || !DOC.cv || !video.videoWidth || now - lastRun < 150) return;
     lastRun = now;
     const q = findSheet(video, video.videoWidth, video.videoHeight, 0.1);   // a sheet held up to a webcam is small
-    const hintEl = document.getElementById("hint");
     if (q) {
       misses = 0;
       // smooth the corners so the frame does not jitter
       sc.quad = sc.quad ? q.map((p, i) => ({ x: sc.quad[i].x * 0.5 + p.x * 0.5, y: sc.quad[i].y * 0.5 + p.y * 0.5 })) : q;
       sc.quadAt = Date.now();
-      if (hintEl) hintEl.textContent = "Blatt erkannt · ruhig halten";
+      const diag = Math.hypot(video.videoWidth, video.videoHeight);
+      const moved = lastQ ? Math.max(...q.map((p, i) => Math.hypot(p.x - lastQ[i].x, p.y - lastQ[i].y))) / diag : 1;
+      if (moved > 0.02) stillSince = now;
+      if (moved > 0.12) armed = true;                   // clearly another sheet or position
+      lastQ = q;
+      if (sc.auto && armed && now - stillSince > 1000 && !layer.firstElementChild) { armed = false; capture(); }
     } else if (++misses > 4) {
-      sc.quad = null;
-      if (hintEl) hintEl.textContent = "Seite ins Bild halten";
+      sc.quad = null; lastQ = null; armed = true;       // sheet gone: the next one may be taken automatically
     }
+    if (found !== !!sc.quad) { found = !!sc.quad; showHint(); }
     drawQuad(sc.quad);
   };
 
@@ -668,7 +843,6 @@ function viewScan() {
   // Started in steps that each say what happens: preferred settings first, then any camera at all; if the
   // browser does not answer (permission question hidden or dismissed, camera busy) a "Kamera starten"
   // button appears, because a tap makes the browser ask again. The shutter always works without camera.
-  const hint = document.getElementById("hint");
   const retry = document.getElementById("camretry");
   const onScan = () => location.hash.startsWith("#/scan") && document.getElementById("hint") === hint;
   const useStream = (stream) => {
@@ -679,7 +853,7 @@ function viewScan() {
     video.play().catch(() => {});
     document.getElementById("paper").hidden = true;
     retry.hidden = true;
-    hint.textContent = "Seite ins Bild halten · ruhig halten";
+    camText = ""; showHint();
     cancelAnimationFrame(stopCamera.raf);
     stopCamera.raf = requestAnimationFrame(tick);
     loadOpenCV().catch(() => {});                       // only now: the big download must not delay the camera
@@ -697,13 +871,13 @@ function viewScan() {
   };
   const startCamera = async () => {
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      hint.textContent = "Auslöser öffnet die Kamera-App";   // plain http on a phone: no live camera allowed
+      camText = ""; showHint();                         // plain http on a phone: no live camera allowed
       return;
     }
     retry.hidden = true;
-    hint.textContent = "Kamera wird gestartet …";
+    camText = "Kamera wird gestartet …"; showHint();
     const slow = setTimeout(() => {
-      if (onScan() && !sc.stream) { hint.textContent = "Kamera antwortet nicht · Freigabe in der Adressleiste prüfen"; retry.hidden = false; }
+      if (onScan() && !sc.stream) { camText = "Kamera antwortet nicht · Freigabe in der Adressleiste prüfen"; showHint(); retry.hidden = false; }
     }, 5000);
     const wishes = [
       { video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1920 } }, audio: false },
@@ -717,11 +891,12 @@ function viewScan() {
     clearTimeout(slow);
     if (!error || !onScan() || sc.stream) return;
     console.warn("Kamera:", error.name, error.message);
-    hint.textContent = ({
+    camText = ({
       NotAllowedError: "Kamera nicht freigegeben · in der Adressleiste erlauben",
       NotReadableError: "Kamera wird von einem anderen Programm benutzt",
       NotFoundError: "Keine Kamera gefunden · Auslöser öffnet die Dateiauswahl",
     })[error.name] || `Kamera startet nicht (${error.name || "Fehler"})`;
+    showHint();
     retry.hidden = error.name === "NotFoundError";
   };
   retry.onclick = startCamera;
@@ -750,11 +925,11 @@ function analyseScreen({ title, lead, steps, previewUrl, engine, action }) {
 
 const engineLabel = (id) => (S.meta.engines.find((e) => e.id === id) || {}).label || id;
 
-function uploadAndAnalyse(files) {
+function uploadAndAnalyse(files, chosenEngine) {
   go("#/analyse/upload");                       // stops other timers; the upload below keeps running
   const preview = files.find((f) => f.type.startsWith("image/") && !/hei[cf]$/i.test(f.name));
   const previewUrl = preview ? URL.createObjectURL(preview) : null;
-  const engine = S.meta.default_engine;
+  const engine = chosenEngine || S.meta.default_engine;
   const draw = (pct) => {
     $app.innerHTML = analyseScreen({
       title: "Unterlagen werden hochgeladen", lead: `${files.length} Seite(n) · ${pct} %`, previewUrl, engine: engineLabel(engine),
