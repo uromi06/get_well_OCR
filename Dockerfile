@@ -25,9 +25,12 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Dependencies first, so code changes don't reinstall everything
+# Dependencies first, so code changes don't reinstall everything.
+# torch first from the CPU-only index: sentence-transformers would otherwise pull the CUDA build
+# (~4 GB of nvidia-* wheels) that this image never uses, and the image no longer fits on the CI runner.
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch \
+ && pip install -r requirements.txt
 
 COPY . .
 
