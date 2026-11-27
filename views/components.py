@@ -163,7 +163,7 @@ code {font-family: "Atkinson Hyperlegible", monospace !important;}
 [data-testid="stSidebar"] button[kind="primary"] {background:var(--lime); border-color:var(--lime);}
 [data-testid="stSidebar"] button[kind="primary"] p {color:var(--navy) !important; font-weight:700;}
 [data-testid="stSidebar"] hr {border-color:rgba(255,255,255,.18);}
-[data-testid="stSidebar"] [data-testid="stExpander"] {border-color:rgba(255,255,255,.25);}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary, [data-testid="stSidebar"] [data-testid="stExpander"] details {background:transparent !important;}
 [data-testid="stSidebar"] [data-testid="stExpander"] summary:hover p {color:var(--lime) !important;}
 [data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarHeader"] svg {color:#FFFFFF;}
 [data-testid="stSidebar"] [data-testid="stRadioGroup"] {background:#FFFFFF; border-radius:10px; padding:.45rem .7rem;}
