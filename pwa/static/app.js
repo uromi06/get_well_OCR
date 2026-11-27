@@ -163,8 +163,8 @@ function viewLogin() {
     <form class="login" id="f">
       <div class="brand"><img src="/icons/icon-192.png" alt=""><div><div class="eyebrow">Get Well OCR</div><h1 class="title">Anmelden</h1></div></div>
       ${notSet ? `<div class="note cave">${ICON.info}<span>Login ist auf dem Server nicht eingerichtet (APP_USERNAME / APP_PASSWORD).</span></div>` : ""}
-      <label class="field">Benutzername<input type="text" name="u" autocomplete="username" required></label>
-      <label class="field">Passwort<input type="password" name="p" autocomplete="current-password" required></label>
+      <label class="field">Benutzername<input type="text" name="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+      <label class="field">Passwort<input type="password" name="p" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
       <button class="cta" type="submit">Anmelden</button>
       <p class="muted" style="text-align:center">Nur fiktive oder anonymisierte Dokumente verwenden.</p>
     </form>`;
