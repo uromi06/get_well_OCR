@@ -22,6 +22,9 @@ OCR_ENGINE = os.getenv("OCR_ENGINE", "tesseract").lower()
 _tess = os.getenv("TESSERACT_CMD", "").strip()
 TESSERACT_CMD = _tess if _tess and Path(_tess).is_file() else ""
 TESSERACT_LANG = "deu+eng"
+# Pages read at the same time (one Tesseract process each, Tesseract itself uses one core per page).
+# Match it to the CPU cores; 2 fits the t3.large.
+OCR_WORKERS = max(1, int(os.getenv("OCR_WORKERS", "2") or 2))
 
 # Mistral on Azure AI Foundry (EU region, provided by the hackathon)
 #   OCR:  Mistral Document AI if MISTRAL_OCR_ENDPOINT is set and deployed, else Mistral Large 3 reads

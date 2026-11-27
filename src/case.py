@@ -11,6 +11,7 @@ Rule-based extraction is the default and the fallback for optional Mistral extra
 """
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -663,11 +664,19 @@ def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, p
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
     cache_dir = out_dir / "ocr"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    pages = []
-    for i, f in enumerate(files, 1):
-        pages.append(read_page(f, i, engine, cache_dir, fresh))
-        pages[-1]["quality"] = page_quality(pages[-1])     # recomputed, so threshold changes need no new OCR
-        progress(f"[{i}/{len(files)}] {f.name}  quality={pages[-1]['quality']}")
+    # Pages are read in parallel (config.OCR_WORKERS); threads are enough because Tesseract runs as its
+    # own process and OpenCV releases the GIL. Progress is reported here, in the calling thread
+    # (Streamlit widgets must not be touched from worker threads), and the page order stays as before.
+    pages: list[dict | None] = [None] * len(files)
+    with ThreadPoolExecutor(max_workers=min(config.OCR_WORKERS, max(1, len(files)))) as pool:
+        futures = {pool.submit(read_page, f, i, engine, cache_dir, fresh): i
+                   for i, f in enumerate(files, 1)}
+        for done, fut in enumerate(as_completed(futures), 1):
+            i = futures[fut]
+            page = fut.result()
+            page["quality"] = page_quality(page)     # recomputed, so threshold changes need no new OCR
+            pages[i - 1] = page
+            progress(f"[{done}/{len(files)}] {files[i - 1].name}  quality={page['quality']}")
     docs = group_documents(pages)
     ok_pages = [p for p in pages if p["quality"] == "ok"]
     extract_errors = []
