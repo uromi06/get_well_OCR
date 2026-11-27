@@ -128,7 +128,7 @@ Three kinds of damage (skew, noise, fax) at four levels each, from clean (0) to 
 
 <img src="docs/img/medication_review.jpg" alt="Medication review table">
 
-Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs, lets you choose the OCR engine (Tesseract or Mistral OCR), the extraction (*Auswertung*: rules or AI) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
+Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs and the PatientenID (typed or scanned from the barcode on the KIS label), lets you choose the OCR engine (Tesseract or Mistral OCR), the extraction (*Auswertung*: rules or AI) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
 
 | Tab | For |
 |---|---|
@@ -246,14 +246,16 @@ Every push to `main` builds a Docker image, smoke-tests it and, after manual app
 
 ## 👥 Team
 
-| | Name | GitHub | Role |
-|---|---|---|---|
-| 🩺 | **Maxwell** | | ER doctor, clinical requirements |
-| 🧠 | **Urmi** | [@uromi06](https://github.com/uromi06) | AI pipeline |
-| 👤 | **Peter** | | *role* |
-| 👤 | **Lennart** | [@KTV02](https://github.com/KTV02) | *role* |
-| 👤 | **Hoang** | [@HoangStud13](https://github.com/HoangStud13) | *role* |
-| 👤 | **Subhangee** | | *role* |
+Six people, one weekend, one bag of paper.
+
+| | Who | Role |
+|---|---|---|
+| 🩺 | **Maxwell** · [@maxwellwolfrum](https://github.com/maxwellwolfrum) | ER doctor: clinical requirements, validation of the simulated cases, testing and pitch |
+| 🧠 | **Urmi** · [@uromi06](https://github.com/uromi06) | AI pipeline: classification, extraction, cross-document checks, handover and evaluation |
+| 🧼 | **Subhangee** | Image preprocessing with OpenCV, PaddleOCR evaluation and testing |
+| ☁️ | **Hoang** · [@hoangStud13](https://github.com/hoangStud13) | AWS deployment, hosting and the phone app UI |
+| 🔐 | **Lennart** · [@KTV02](https://github.com/KTV02) | Launcher, login, Mistral integration, tunneling, deployment and testing |
+| 🎤 | **Peter** · [@PedroLemonade](https://github.com/PedroLemonade) | Pitch, slides and iOS app prototype |
 
 <div align="center">
 <sub>Made with ☕ at the Healthcare Hackathon Bayern 2026, Munich</sub>

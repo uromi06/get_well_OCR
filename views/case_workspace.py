@@ -6,8 +6,8 @@ Flow on screen (mirrors the pipeline):
   tabs      ER summary · Pages · Medication (doctor review) · Labs & findings · Documents · Export · Evaluation
 
 Debug view (⚙ in the sidebar, default DEBUG_VIEW in .env). Off = clinical view: technical details are hidden
-(OCR engine and extraction choice, case and document IDs, sharpness/confidence values and thresholds, raw OCR
-text, classifier details, Mistral setup warnings, test-case scores). Everything the doctor needs to verify the
+(OCR engine and extraction tags, "re-run OCR" toggle, case and document IDs, sharpness/confidence values and thresholds, raw OCR
+text, classifier details, Mistral fallback warning, test-case scores). OCR engine and extraction choice stay visible. Everything the doctor needs to verify the
 result stays visible in both modes: source pages, CAVE, conflicts, warnings, AI corrections, facts per page,
 page highlights, "please retake", document type disagreements, the doctor's own correction log.
 """
@@ -117,27 +117,24 @@ with st.sidebar:
                  index=ids.index(st.session_state.case_id) if st.session_state.case_id in ids else None,
                  placeholder="Fall auswählen …", on_change=_open_case)
 
-    if debug:
-        st.markdown("### Verarbeitung")
-        engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
-                          index=1 if config.OCR_ENGINE == "mistral" else 0,
-                          format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
-                          help="Tesseract läuft offline auf diesem Rechner. Mistral (Azure, EU-Region "
-                               "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
-        if engine == "mistral" and not mistral.ocr_available():
-            st.warning("Mistral OCR: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
-        extractor = st.radio("Auswertung", ["rules", "llm"], horizontal=True,
-                             index=1 if config.EXTRACTOR == "llm" else 0,
-                             format_func={"rules": "Regeln", "llm": "KI (Mistral Large 3)"}.get,
-                             help="Regeln laufen lokal. Die KI sendet erkannte Textzeilen an Mistral (Azure, EU). "
-                                  "Nur fiktive Daten verwenden und markierte Korrekturen am Original prüfen.")
-        if extractor == "llm" and not mistral.chat_available():
-            st.warning("Mistral-Auswertung: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen. "
-                       "Ohne KI-Ergebnis werden die Regeln verwendet.")
-        fresh = st.toggle("Texterkennung neu ausführen", value=False,
-                          help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).")
-    else:                                 # clinical view: configured defaults, no technical choices
-        engine, extractor, fresh = config.OCR_ENGINE, config.EXTRACTOR, False
+    st.markdown("### Verarbeitung")
+    engine = st.radio("Texterkennung", ["tesseract", "mistral"], horizontal=True,
+                      index=1 if config.OCR_ENGINE == "mistral" else 0,
+                      format_func={"tesseract": "Tesseract", "mistral": "Mistral OCR"}.get,
+                      help="Tesseract läuft offline auf diesem Rechner. Mistral (Azure, EU-Region "
+                           "Schweden) liest Tabellen, Handschrift und schlechte Fotos besser.")
+    if engine == "mistral" and not mistral.ocr_available():
+        st.warning("Mistral OCR: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen.")
+    extractor = st.radio("Auswertung", ["rules", "llm"], horizontal=True,
+                         index=1 if config.EXTRACTOR == "llm" else 0,
+                         format_func={"rules": "Regeln", "llm": "KI (Mistral Large 3)"}.get,
+                         help="Regeln laufen lokal. Die KI sendet erkannte Textzeilen an Mistral (Azure, EU). "
+                              "Nur fiktive Daten verwenden und markierte Korrekturen am Original prüfen.")
+    if extractor == "llm" and not mistral.chat_available():
+        st.warning("Mistral-Auswertung: MISTRAL_CHAT_ENDPOINT und MISTRAL_API_KEY in .env eintragen. "
+                   "Ohne KI-Ergebnis werden die Regeln verwendet.")
+    fresh = st.toggle("Texterkennung neu ausführen", value=False,
+                      help="Aus: gespeicherte Ergebnisse verwenden (schnell, offline).") if debug else False
     run = st.button("▶ Fall erneut verarbeiten", use_container_width=True,
                     disabled=not st.session_state.case_id)
 
