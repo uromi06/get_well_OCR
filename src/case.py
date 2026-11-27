@@ -7,8 +7,7 @@
   5. merge          current medication, conflicts, latest labs, timeline
   6. summarize      ER overview in the app's JSON shape, every fact with its source page
 
-v1 = rules only, fully offline (Tesseract). The LLM step tomorrow plugs in at
-steps 2, 4 and 6 and is compared against this baseline.
+Rule-based extraction is the default and the fallback for optional Mistral extraction.
 """
 import json
 import re
@@ -491,7 +490,8 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
             status = "new"
         sources = sorted({m["page"] for m in recent})
         current.append({"name": name, "strength": latest["strength"], "dosing": latest["dosing"],
-                        "status": status, "sources": sources, "unknown": any(m.get("unknown") for m in mentions)})
+                        "status": status, "sources": sources, "unknown": any(m.get("unknown") for m in mentions),
+                        "ai_corrected": any(m.get("ai_corrected") for m in mentions)})
         variants = {(_norm(m["strength"]), _norm(m["dosing"])) for m in concrete if m["strength"]}
         if len({v[0] for v in variants}) > 1 and not corrections:
             detail = " vs. ".join(f"{m['strength'] or '?'} {m['dosing'] or ''} (S. {m['page']}, {m['date'] or 'ohne Datum'})"
@@ -562,6 +562,7 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
         if key not in diags:
             diags[key] = {"text": d["text"], "icd10": d["icd10"], "date": d["date"], "sources": set(), "details": []}
         diags[key]["sources"].add(d["page"])
+        diags[key]["ai_corrected"] = diags[key].get("ai_corrected", False) or bool(d.get("ai_corrected"))
         for det in d.get("details", []):
             if det not in diags[key]["details"]:
                 diags[key]["details"].append(det)
@@ -648,10 +649,18 @@ def page_facts(p: dict) -> list[dict]:
             elif kind == "diagnoses":
                 label = f"{f['text']} ({f['icd10']})" if f['icd10'] else f['text']
             out.append({"kind": kind, "label": label, "source_text": f.get("source_text")})
+    for c in p.get("corrections", []):
+        out.append({"kind": "corrections", "label": f"{c['original']} → {c['corrected']}",
+                    "source_text": c["source_text"]})
     return out
 
 
-def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, progress=print) -> dict:
+def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, progress=print,
+                 extractor: str | None = None) -> dict:
+    extractor = extractor or config.EXTRACTOR
+    if extractor == "llm":
+        from .llm_extract import extract_page_llm
+        from .mistral import MistralError
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
     cache_dir = out_dir / "ocr"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -669,19 +678,37 @@ def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, p
             pages[i - 1] = page
             progress(f"[{done}/{len(files)}] {files[i - 1].name}  quality={page['quality']}")
     docs = group_documents(pages)
-    for p in pages:
-        if p["quality"] == "ok":
-            p["facts"] = extract_page(p)
+    ok_pages = [p for p in pages if p["quality"] == "ok"]
+    extract_errors = []
+    for i, p in enumerate(ok_pages, 1):
+        corr = []
+        if extractor == "llm":
+            progress(f"[KI {i}/{len(ok_pages)}] Seite {p['page']}")
+            try:
+                facts, corr = extract_page_llm(p)
+            except MistralError as e:
+                facts = extract_page(p)
+                p["extract_error"] = str(e)
+                extract_errors.append({"page": p["page"], "error": str(e)})
+        else:
+            facts = extract_page(p)
+        p["facts"], p["corrections"] = facts, corr
     summary = merge(pages, docs)
+    summary["corrections"] = [{**c, "sources": [p["page"]]}
+                              for p in sorted(ok_pages, key=lambda p: p["page"]) for c in p["corrections"]]
+    if extract_errors:
+        summary["extract_errors"] = extract_errors
     summary["text_de"] = summary_text(summary)
     result = {
         "case_id": folder.parent.name if folder.name.startswith("pages") else folder.name,
-        "status": "ready", "engine": engine, "processed_at": datetime.now().isoformat(timespec="seconds"),
+        "status": "ready", "engine": engine, "extractor": extractor,
+        "processed_at": datetime.now().isoformat(timespec="seconds"),
         "patient": find_patient([p for p in pages if p["quality"] == "ok"]),
         "pages": [{"page": p["page"], "file": p["file"], "doc_id": p.get("doc_id"), "doc_type": p.get("doc_type"),
                    "status": "done" if p["quality"] == "ok" else "retake", "quality": p["quality"],
                    "sharpness": p["sharpness"], "mean_confidence": p["mean_confidence"],
-                   "facts": page_facts(p)} for p in pages],
+                   "facts": page_facts(p), "corrections": p.get("corrections", []),
+                   "extract_error": p.get("extract_error")} for p in pages],
         "documents": docs,
         "summary": summary,
     }

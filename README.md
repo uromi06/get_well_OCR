@@ -54,12 +54,7 @@ flowchart LR
     D --> E["💊 Extract<br/>meds, diagnoses,<br/>labs, CAVE"]
     E --> F["🔀 Merge<br/>newest wins,<br/>conflicts flagged"]
     F --> G["👩‍⚕️ Doctor<br/>confirms"]
-    G --> L["✍️ Optional history text<br/>Mistral Large 3 from<br/>confirmed facts only"]
-    L --> V{"🔎 Every number and<br/>date in the facts?"}
-    V -- "no" --> W["⚠️ Flagged:<br/>not supported"]
-    W --> L
-    V -- "yes" --> A2["👩‍⚕️ Doctor<br/>approves text"]
-    A2 --> H["📋 ER handover<br/>JSON · FHIR<br/>patient plan PDF"]
+    G --> H["📋 ER handover<br/>JSON · FHIR<br/>patient plan PDF"]
     G --> H
 
     style R fill:#FBEFF1,stroke:#B4182D,color:#14232E
@@ -72,13 +67,13 @@ flowchart LR
 | Step | What happens | Why it matters |
 |---|---|---|
 | 🧼 **Clean** | Turns sideways pages upright, evens out shadows, removes noise, straightens tilted photos | Bad phone photos are the normal case in an ER |
-| 📖 **Read** | Tesseract on the laptop, or Mistral Document AI (Azure, EU region) for tables, handwriting and poor photos | Choose offline privacy or higher accuracy per case |
+| 📖 **Read** | Tesseract on the laptop, or Mistral OCR (Azure, EU region): Mistral Large 3 reads the page image, much better on tables, handwriting and poor photos | Choose offline privacy or higher accuracy per case |
 | 🔍 **Quality gate** | Blurry or unreadable pages are sent back: *"please retake"* | The system never guesses on pages it cannot read |
 | 🗂️ **Classify** | Keyword rules **and** a small multilingual model (runs on a laptop) | When they disagree, the doctor is asked |
+| 💊 **Extract** | Rules (regular expressions, offline) **or** Mistral Large 3: it understands the medical content, keeps what matters, and fixes OCR typos. Every fix and every implausible value is listed for the doctor and linked to its source line | The AI never changes a value silently. If it fails on a page, that page falls back to the rules |
 | 🔀 **Merge** | One medication list from all documents: new, stopped, changed | Old plans don't overwrite new letters |
 | ⚠️ **Conflicts** | Contradictions are shown, never silently resolved | *"Allergies: none"* vs. *"penicillin allergy"* |
 | 👩‍⚕️ **Review** | Doctor confirms or corrects; every change is logged | Exports unlock only after confirmation |
-| ✍️ **History text** | Mistral Large 3 turns the **confirmed** facts into a short history in doctor's-letter style. It never sees photos or raw OCR text, runs at temperature 0, and every number and date it writes is checked against the facts | The language model can phrase, not invent. Anything unsupported is flagged, and the doctor must approve the text |
 
 ---
 
@@ -108,6 +103,16 @@ flowchart LR
 </td></tr>
 </table>
 
+### 🤖 Rules vs. AI extraction (same test case)
+
+| OCR → extraction | Critical facts | Conflicts (5 planted) | AI corrections |
+|---|---|---|---|
+| Tesseract → rules | 13 / 13 | 7 | – |
+| Tesseract → Mistral Large 3 | 13 / 13 | 6 | 32 (e.g. Bisoprolol "25mg" → 2,5 mg, INR "16" → 1,6) |
+| Mistral OCR → Mistral Large 3 | 13 / 13 | **5** | 2 |
+
+Reproduce with `python scripts/compare_extractors.py [--engine mistral]`.
+
 ### 🧪 Stress test: the 20-page case, deliberately damaged
 
 <img src="docs/img/robustness.png" alt="Robustness chart: critical facts found and pages sent back for skew, fax and noise at damage levels 0 to 4">
@@ -123,16 +128,16 @@ Three kinds of damage (skew, noise, fax) at four levels each, from clean (0) to 
 
 <img src="docs/img/medication_review.jpg" alt="Medication review table">
 
-Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs, lets you choose the OCR engine (Tesseract or Mistral OCR) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
+Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs, lets you choose the OCR engine (Tesseract or Mistral OCR), the extraction (*Auswertung*: rules or AI) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
 
 | Tab | For |
 |---|---|
-| 🩺 **ER overview** | CAVE, safety warnings, conflicts to clarify, medication, diagnoses, contact person |
+| 🩺 **ER overview** | CAVE, safety warnings, AI corrections to check, conflicts to clarify, medication, diagnoses, contact person |
 | 📄 **Pages** | All photos, document type per page, highlighted sources (Mistral OCR returns no positions: sources are listed as text instead) |
 | 💊 **Medication** | Doctor reviews, corrects and confirms; correction log |
 | 🧪 **Labs & findings** | Latest values with trend |
 | 🗂️ **Documents** | Timeline, pages grouped into documents |
-| ⬇️ **Export** | Optional history text by Mistral Large 3 (after all medication is confirmed), ER handover text (DE/EN), JSON, FHIR R4, CSV, patient plan PDF in 🇩🇪 🇬🇧 🇹🇷 🇨🇳 |
+| ⬇️ **Export** | ER handover text (DE/EN), JSON, FHIR R4, CSV, patient plan PDF in 🇩🇪 🇬🇧 🇹🇷 🇨🇳 |
 
 ---
 
@@ -150,10 +155,9 @@ That's it. On the first start the launcher sets up everything by itself, then op
 1. finds Python 3.10 to 3.13 (prefers 3.12), or installs 3.12 (brew / winget / apt)
 2. creates `.venv` and installs `requirements.txt` (later starts reinstall only when the file changed)
 3. installs Tesseract with German (brew / winget / apt / dnf), or downloads missing language data into `.tessdata/`
-4. creates `.env` from `.env.example`
+4. uses the committed `.env`: login, Mistral keys and endpoints are already included
 
-> 🔑 **Set a login before the first use:** put `APP_USERNAME` and `APP_PASSWORD` into `.env`. Without them the app shows an error instead of opening.
-> Optional: fill in the `MISTRAL_*` values to enable Mistral OCR and the AI-written history. Without them everything runs with Tesseract.
+> 🔑 **Nothing to configure.** The login (`APP_USERNAME` / `APP_PASSWORD`) and the team keys for Mistral are in the committed [`.env`](.env). Mistral OCR and AI extraction work right after cloning. To use your own keys, edit `.env` (all options: [`.env.example`](.env.example)).
 
 Later starts take a few seconds. Options: `--setup-only`, `--self-test` (also checks German OCR on a test page), `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
 
@@ -169,7 +173,8 @@ python scripts/process_case.py         # runs the test case, prints the scorecar
 
 - Python 3.12 and Tesseract 5 with the **German** language pack. `start.sh` / `start.bat` install both. Manual install on Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki)
 - Login: `APP_USERNAME` and `APP_PASSWORD` in `.env` (required)
-- Optional: Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY`, `MISTRAL_OCR_ENDPOINT`, `MISTRAL_CHAT_ENDPOINT` in `.env`. The team `.env` with the shared keys is in this private repository; keep the repository private, and rotate the keys before it is ever made public
+- Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY` and `MISTRAL_CHAT_ENDPOINT` are set in the committed `.env`. OCR uses Mistral Large 3 on the same endpoint; `MISTRAL_OCR_ENDPOINT` is only needed for a Mistral Document AI deployment
+- Defaults in `.env`: `OCR_ENGINE=tesseract|mistral`, `EXTRACTOR=rules|llm`, `OCR_WORKERS=2` (both modes can also be switched in the sidebar)
 - Optional: Azure Document Intelligence (EU region), endpoint and key in `.env`
 - The classifier model (`multilingual-e5-small`, ~120 MB) downloads once, then runs offline
 
@@ -177,6 +182,7 @@ python scripts/process_case.py         # runs the test case, prints the scorecar
 python scripts\process_case.py --classifier rules|model|hybrid
 python scripts\process_case.py --engine mistral|azure
 python scripts\process_case.py --pages data\cases\case01_hard\pages_photo
+python scripts\compare_extractors.py --engine tesseract|mistral
 python scripts\make_stress_set.py ; python scripts\run_stress.py --quick
 ```
 </details>
@@ -193,11 +199,11 @@ get_well_OCR/
 ├── views/                  Screens (case workspace, UI components)
 ├── src/                    Pipeline: no UI code, reusable by the API
 │   ├── preprocess.py       Image cleanup (orientation, lighting, noise, deskew)
-│   ├── extract.py          OCR: Tesseract, Mistral Document AI or Azure Document Intelligence
+│   ├── extract.py          OCR: Tesseract, Mistral OCR or Azure Document Intelligence
 │   ├── mistral.py          Mistral OCR and Mistral Large 3 calls (cached for offline demos)
+│   ├── llm_extract.py      AI extraction with Mistral Large 3: facts + flagged corrections per page
 │   ├── case.py             Multi-page pipeline: quality, classify, extract, merge
 │   ├── doc_classifier.py   Offline language model for document types
-│   ├── history.py          AI-written history from confirmed facts, with grounding check
 │   ├── report.py           ER handover text
 │   ├── export.py           JSON, CSV, FHIR, patient plan PDF
 │   ├── store.py            Case folders, uploads, doctor review, delete history
@@ -221,14 +227,14 @@ All patients are **fictional** (every page is marked *FIKTIV*). Main case: *Helg
 | Mode | What leaves the laptop |
 |---|---|
 | 💻 **Tesseract (offline)** | Nothing. OCR, classification and extraction run locally |
-| 🇪🇺 **Mistral OCR** | Page images, sent to Mistral Document AI on Azure AI Foundry in an EU region (Sweden Central) |
-| ✍️ **AI history text** | Only the doctor-confirmed facts (no photos, no raw text), sent to Mistral Large 3 in the same EU region |
+| 🇪🇺 **Mistral OCR** | Page images, sent to Mistral Large 3 on Azure AI Foundry in an EU region (Sweden Central) |
+| 🤖 **AI extraction** | The OCR text lines of each page, sent to Mistral Large 3 in the same EU region |
 
 - 🧪 **Fictional data only** in this repository and in the cloud modes
 - 🔑 The web app opens **only after login**
 - 🗃️ Mistral results are cached locally, so the demo also works without a connection
 - 🗑️ One click **deletes every uploaded case** (photos, OCR, results, review)
-- 👩‍⚕️ **Nothing is exported** before a doctor has confirmed it, and the AI history text must be approved separately
+- 👩‍⚕️ **Nothing is exported** before a doctor has confirmed it
 
 ---
 

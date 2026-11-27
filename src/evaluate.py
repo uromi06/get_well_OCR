@@ -78,8 +78,9 @@ DEFAULT_NEEDLE_MATCH = {
 def score_case(result: dict, answers: dict) -> dict:
     """Score a case_result.json against <case>_answers.json. Returns numbers plus details."""
     import json
-    summary = json.dumps({k: v for k, v in result["summary"].items() if k != "text_de"},
-                         ensure_ascii=False).lower()
+    # Raw OCR in corrections and error messages is not an extracted fact.
+    summary = json.dumps({k: v for k, v in result["summary"].items()
+                          if k not in ("text_de", "corrections", "extract_errors")}, ensure_ascii=False).lower()
     needles = []
     for n in answers["needles"]:
         keys = n.get("match") or DEFAULT_NEEDLE_MATCH.get(n["id"], [])
