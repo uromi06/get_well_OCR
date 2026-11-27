@@ -4,7 +4,10 @@ Run from the project folder:   streamlit run app.py      ->  http://localhost:85
 """
 import streamlit as st
 
+from src.auth import require_login
+
 st.set_page_config(page_title="Get Well OCR", page_icon="🩺", layout="wide", initial_sidebar_state="expanded")
+require_login()   # every page goes through app.py, so this gates the whole app
 
 nav = st.navigation([
     st.Page("views/case_workspace.py", title="Fall-Arbeitsplatz", icon="🩺", default=True),
