@@ -54,12 +54,7 @@ flowchart LR
     D --> E["💊 Extract<br/>meds, diagnoses,<br/>labs, CAVE"]
     E --> F["🔀 Merge<br/>newest wins,<br/>conflicts flagged"]
     F --> G["👩‍⚕️ Doctor<br/>confirms"]
-    G --> L["✍️ Optional history text<br/>Mistral Large 3 from<br/>confirmed facts only"]
-    L --> V{"🔎 Every number and<br/>date in the facts?"}
-    V -- "no" --> W["⚠️ Flagged:<br/>not supported"]
-    W --> L
-    V -- "yes" --> A2["👩‍⚕️ Doctor<br/>approves text"]
-    A2 --> H["📋 ER handover<br/>JSON · FHIR<br/>patient plan PDF"]
+    G --> H["📋 ER handover<br/>JSON · FHIR<br/>patient plan PDF"]
     G --> H
 
     style R fill:#FBEFF1,stroke:#B4182D,color:#14232E
@@ -79,7 +74,6 @@ flowchart LR
 | 🔀 **Merge** | One medication list from all documents: new, stopped, changed | Old plans don't overwrite new letters |
 | ⚠️ **Conflicts** | Contradictions are shown, never silently resolved | *"Allergies: none"* vs. *"penicillin allergy"* |
 | 👩‍⚕️ **Review** | Doctor confirms or corrects; every change is logged | Exports unlock only after confirmation |
-| ✍️ **History text** | Mistral Large 3 turns the **confirmed** facts into a short history in doctor's-letter style. It never sees photos or raw OCR text, runs at temperature 0, and every number and date it writes is checked against the facts | The language model can phrase, not invent. Anything unsupported is flagged, and the doctor must approve the text |
 
 ---
 
@@ -143,7 +137,7 @@ Login first (see [Quick start](#-quick-start)). The **start screen** takes photo
 | 💊 **Medication** | Doctor reviews, corrects and confirms; correction log |
 | 🧪 **Labs & findings** | Latest values with trend |
 | 🗂️ **Documents** | Timeline, pages grouped into documents |
-| ⬇️ **Export** | Optional history text by Mistral Large 3 (after all medication is confirmed), ER handover text (DE/EN), JSON, FHIR R4, CSV, patient plan PDF in 🇩🇪 🇬🇧 🇹🇷 🇨🇳 |
+| ⬇️ **Export** | ER handover text (DE/EN), JSON, FHIR R4, CSV, patient plan PDF in 🇩🇪 🇬🇧 🇹🇷 🇨🇳 |
 
 ---
 
@@ -163,7 +157,7 @@ That's it. On the first start the launcher sets up everything by itself, then op
 3. installs Tesseract with German (brew / winget / apt / dnf), or downloads missing language data into `.tessdata/`
 4. uses the committed `.env`: login, Mistral keys and endpoints are already included
 
-> 🔑 **Nothing to configure.** The login (`APP_USERNAME` / `APP_PASSWORD`) and the team keys for Mistral are in the committed [`.env`](.env). Mistral OCR, AI extraction and the AI history text work right after cloning. To use your own keys, edit `.env` (all options: [`.env.example`](.env.example)).
+> 🔑 **Nothing to configure.** The login (`APP_USERNAME` / `APP_PASSWORD`) and the team keys for Mistral are in the committed [`.env`](.env). Mistral OCR and AI extraction work right after cloning. To use your own keys, edit `.env` (all options: [`.env.example`](.env.example)).
 
 Later starts take a few seconds. Options: `--setup-only`, `--self-test` (also checks German OCR on a test page), `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
 
@@ -210,7 +204,6 @@ get_well_OCR/
 │   ├── llm_extract.py      AI extraction with Mistral Large 3: facts + flagged corrections per page
 │   ├── case.py             Multi-page pipeline: quality, classify, extract, merge
 │   ├── doc_classifier.py   Offline language model for document types
-│   ├── history.py          AI-written history from confirmed facts, with grounding check
 │   ├── report.py           ER handover text
 │   ├── export.py           JSON, CSV, FHIR, patient plan PDF
 │   ├── store.py            Case folders, uploads, doctor review, delete history
@@ -236,13 +229,12 @@ All patients are **fictional** (every page is marked *FIKTIV*). Main case: *Helg
 | 💻 **Tesseract (offline)** | Nothing. OCR, classification and extraction run locally |
 | 🇪🇺 **Mistral OCR** | Page images, sent to Mistral Large 3 on Azure AI Foundry in an EU region (Sweden Central) |
 | 🤖 **AI extraction** | The OCR text lines of each page, sent to Mistral Large 3 in the same EU region |
-| ✍️ **AI history text** | Only the doctor-confirmed facts (no photos, no raw text), sent to Mistral Large 3 in the same EU region |
 
 - 🧪 **Fictional data only** in this repository and in the cloud modes
 - 🔑 The web app opens **only after login**
 - 🗃️ Mistral results are cached locally, so the demo also works without a connection
 - 🗑️ One click **deletes every uploaded case** (photos, OCR, results, review)
-- 👩‍⚕️ **Nothing is exported** before a doctor has confirmed it, and the AI history text must be approved separately
+- 👩‍⚕️ **Nothing is exported** before a doctor has confirmed it
 
 ---
 
