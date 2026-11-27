@@ -55,12 +55,9 @@ flowchart LR
     E --> F["🔀 Merge<br/>newest wins,<br/>conflicts flagged"]
     F --> G["👩‍⚕️ Doctor<br/>confirms"]
     G --> H["📋 ER handover<br/>JSON · FHIR<br/>patient plan PDF"]
-    G --> H
 
     style R fill:#FBEFF1,stroke:#B4182D,color:#14232E
-    style W fill:#FBEFF1,stroke:#B4182D,color:#14232E
     style G fill:#EAF4EE,stroke:#2E7550,color:#14232E
-    style A2 fill:#EAF4EE,stroke:#2E7550,color:#14232E
     style H fill:#E7F1F5,stroke:#0F5E7A,color:#14232E
 ```
 
@@ -128,7 +125,7 @@ Three kinds of damage (skew, noise, fax) at four levels each, from clean (0) to 
 
 <img src="docs/img/medication_review.jpg" alt="Medication review table">
 
-Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs, lets you choose the OCR engine (Tesseract or Mistral OCR), the extraction (*Auswertung*: rules or AI) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
+Login first (see [Quick start](#-quick-start)). The **start screen** takes photos or PDFs and the PatientenID (typed or scanned from the barcode on the KIS label), lets you choose the OCR engine (Tesseract or Mistral OCR), the extraction (*Auswertung*: rules or AI) and pick an earlier case. *Delete history* removes every uploaded case; the test cases stay.
 
 | Tab | For |
 |---|---|
@@ -138,6 +135,14 @@ Login first (see [Quick start](#-quick-start)). The **start screen** takes photo
 | 🧪 **Labs & findings** | Latest values with trend |
 | 🗂️ **Documents** | Timeline, pages grouped into documents |
 | ⬇️ **Export** | ER handover text (DE/EN), JSON, FHIR R4, CSV, patient plan PDF in 🇩🇪 🇬🇧 🇹🇷 🇨🇳 |
+
+### 📱 Phone app (PWA)
+
+The same pipeline as an **installable phone app**: open it in the phone browser, *Add to Home Screen*, photograph the pages with the camera and read the handover on the phone. It shares the case files with the Streamlit app, so both show the same cases.
+
+```bash
+uvicorn pwa.server:app --host 0.0.0.0 --port 8000     # then open http://localhost:8000
+```
 
 ---
 
@@ -155,9 +160,9 @@ That's it. On the first start the launcher sets up everything by itself, then op
 1. finds Python 3.10 to 3.13 (prefers 3.12), or installs 3.12 (brew / winget / apt)
 2. creates `.venv` and installs `requirements.txt` (later starts reinstall only when the file changed)
 3. installs Tesseract with German (brew / winget / apt / dnf), or downloads missing language data into `.tessdata/`
-4. uses the committed `.env`: login, Mistral keys and endpoints are already included
+4. creates `.env` from [`.env.example`](.env.example) if it is missing
 
-> 🔑 **Nothing to configure.** The login (`APP_USERNAME` / `APP_PASSWORD`) and the team keys for Mistral are in the committed [`.env`](.env). Mistral OCR and AI extraction work right after cloning. To use your own keys, edit `.env` (all options: [`.env.example`](.env.example)).
+> 🔑 **One thing to fill in:** open `.env` and set the login (`APP_USERNAME` / `APP_PASSWORD`). For Mistral OCR and AI extraction also add `MISTRAL_API_KEY` and `MISTRAL_CHAT_ENDPOINT`; ask the team for them. **`.env` is never committed**, keys stay on your machine. Without Mistral keys everything runs offline with Tesseract.
 
 Later starts take a few seconds. Options: `--setup-only`, `--self-test` (also checks German OCR on a test page), `--port 8600`, `--no-browser`; anything else is passed to `streamlit run`. `python start.py` works on any OS too.
 
@@ -173,7 +178,7 @@ python scripts/process_case.py         # runs the test case, prints the scorecar
 
 - Python 3.12 and Tesseract 5 with the **German** language pack. `start.sh` / `start.bat` install both. Manual install on Windows: [UB Mannheim build](https://github.com/UB-Mannheim/tesseract/wiki)
 - Login: `APP_USERNAME` and `APP_PASSWORD` in `.env` (required)
-- Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY` and `MISTRAL_CHAT_ENDPOINT` are set in the committed `.env`. OCR uses Mistral Large 3 on the same endpoint; `MISTRAL_OCR_ENDPOINT` is only needed for a Mistral Document AI deployment
+- Mistral on Azure AI Foundry (EU region, Sweden Central): `MISTRAL_API_KEY` and `MISTRAL_CHAT_ENDPOINT` in your local `.env`. OCR uses Mistral Large 3 on the same endpoint; `MISTRAL_OCR_ENDPOINT` is only needed for a Mistral Document AI deployment
 - Defaults in `.env`: `OCR_ENGINE=tesseract|mistral`, `EXTRACTOR=rules|llm`, `OCR_WORKERS=2` (both modes can also be switched in the sidebar)
 - Optional: Azure Document Intelligence (EU region), endpoint and key in `.env`
 - The classifier model (`multilingual-e5-small`, ~120 MB) downloads once, then runs offline
@@ -195,6 +200,7 @@ get_well_OCR/
 ├── start.sh / start.bat    One-command launcher: sets up the environment, starts the app
 ├── app.py                  Streamlit entry point (login gate, one screen)
 ├── api.py                  HTTP API (FastAPI): upload pages, get the text back
+├── pwa/                    Installable phone app (PWA) + case API, same pipeline as the web app
 ├── assets/                 Logo and wordmark
 ├── views/                  Screens (case workspace, UI components)
 ├── src/                    Pipeline: no UI code, reusable by the API
@@ -240,20 +246,22 @@ All patients are **fictional** (every page is marked *FIKTIV*). Main case: *Helg
 
 ## ☁️ Deployment
 
-Every push to `main` builds a Docker image, smoke-tests it and, after manual approval, deploys it to AWS EC2 (API on port 8000, Streamlit app with login on port 8501), with automatic rollback. Setup and details: [`deploy/CD.md`](deploy/CD.md).
+Every push to `main` builds a Docker image, smoke-tests it and, after manual approval, deploys it to AWS EC2 (API on port 8000, Streamlit app on port 8501 and phone app/PWA on port 8080, both with login), with automatic rollback. Setup and details: [`deploy/CD.md`](deploy/CD.md).
 
 ---
 
 ## 👥 Team
 
-| | Name | GitHub | Role |
-|---|---|---|---|
-| 🩺 | **Maxwell** | | ER doctor, clinical requirements |
-| 🧠 | **Urmi** | [@uromi06](https://github.com/uromi06) | AI pipeline |
-| 👤 | **Peter** | | *role* |
-| 👤 | **Lennart** | [@KTV02](https://github.com/KTV02) | *role* |
-| 👤 | **Hoang** | [@HoangStud13](https://github.com/HoangStud13) | *role* |
-| 👤 | **Subhangee** | | *role* |
+Six people, one weekend, one bag of paper.
+
+| | Who | Role |
+|---|---|---|
+| 🩺 | **Maxwell** · [@maxwellwolfrum](https://github.com/maxwellwolfrum) | ER doctor: clinical requirements, validation of the simulated cases, testing and pitch |
+| 🧠 | **Urmi** · [@uromi06](https://github.com/uromi06) | AI pipeline: classification, extraction, cross-document checks, handover and evaluation |
+| 🧼 | **Subhangee** | Image preprocessing with OpenCV, PaddleOCR evaluation and testing |
+| ☁️ | **Hoang** · [@hoangStud13](https://github.com/hoangStud13) | AWS deployment, hosting and the phone app UI |
+| 🔐 | **Lennart** · [@KTV02](https://github.com/KTV02) | Launcher, login, Mistral integration, tunneling, deployment and testing |
+| 🎤 | **Peter** · [@PedroLemonade](https://github.com/PedroLemonade) | Pitch, slides and iOS app prototype |
 
 <div align="center">
 <sub>Made with ☕ at the Healthcare Hackathon Bayern 2026, Munich</sub>
