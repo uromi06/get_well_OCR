@@ -68,6 +68,28 @@ def _process(case_dir_pages, case_out, engine, fresh, extractor):
     bar.empty()
 
 
+def _scan_patient_id():
+    """Barcode photo uploaded -> decode -> fill the PatientenID field."""
+    from src.patient_barcode import patient_id_from_image
+    f = st.session_state.get(f"pid_scan_{st.session_state.pid_scan_n}")
+    if f is None:
+        return
+    try:
+        pid, texts = patient_id_from_image(f.getvalue())
+    except Exception as e:                       # unreadable image
+        st.session_state.pid_scan_msg = ("warn", f"Bild konnte nicht gelesen werden: {e}")
+        return
+    if pid:
+        st.session_state.patient_id = pid
+        st.session_state.pid_scan_n += 1         # fresh uploader for the next scan
+        st.session_state.pid_scan_msg = ("ok", f"PatientenID aus Barcode übernommen: {pid}")
+    elif texts:
+        st.session_state.pid_scan_msg = ("warn", f"Barcode gelesen, aber keine PatientenID erkannt: {texts[0][:80]}")
+    else:
+        st.session_state.pid_scan_msg = ("warn", "Kein Barcode gefunden. Näher heran, scharf und gut beleuchtet "
+                                                 "fotografieren oder die ID manuell eingeben.")
+
+
 with st.sidebar:
     st.button("＋ Neuer Fall", type="primary" if st.session_state.case_id else "secondary",
               use_container_width=True, on_click=_new_case)
@@ -130,25 +152,35 @@ if not case_id:
   <div class="gw-hero-sub">Fotos oder PDFs der mitgebrachten Unterlagen hochladen. Get Well OCR liest, sortiert
   und prüft sie und erstellt die Übergabe für die Notaufnahme. Jede Angabe bleibt mit ihrer Quellseite verknüpft.</div>
 </div>""")
-    with st.form("upload", clear_on_submit=False, border=False):
-        files_up = st.file_uploader("Unterlagen", type=store.UPLOAD_TYPES, accept_multiple_files=True,
-                                    label_visibility="collapsed",
-                                    help="Mehrere Dateien möglich. Die Reihenfolge der Dateien ist die Seitenreihenfolge.")
-        c1, c2 = st.columns([3, 2], vertical_alignment="bottom")
-        label = c1.text_input("Bezeichnung (optional)", placeholder="z. B. Notaufnahme, Bett 4")
-        go = c2.form_submit_button("Unterlagen auswerten", type="primary", use_container_width=True)
+    files_up = st.file_uploader("Unterlagen", type=store.UPLOAD_TYPES, accept_multiple_files=True,
+                                label_visibility="collapsed",
+                                help="Mehrere Dateien möglich. Die Reihenfolge der Dateien ist die Seitenreihenfolge.")
+    st.session_state.setdefault("pid_scan_n", 0)
+    c1, c_cam, c2 = st.columns([3, 1, 2], vertical_alignment="bottom")
+    label = c1.text_input("PatientenID (optional)", key="patient_id", placeholder="z. B. 12345678",
+                          help="Manuell eingeben oder über 📷 den Barcode vom KIS-Etikett / Patientenarmband scannen.")
+    with c_cam.popover("Scan", icon=":material/photo_camera:", use_container_width=True,
+                       help="Barcode des KIS-Etiketts fotografieren oder Bild hochladen"):
+        st.caption("Foto vom Barcode (KIS-Etikett, Armband). Am Handy öffnet sich die Kamera.")
+        st.file_uploader("Barcode-Bild", type=["png", "jpg", "jpeg", "heic", "heif", "webp"],
+                         key=f"pid_scan_{st.session_state.pid_scan_n}", on_change=_scan_patient_id,
+                         label_visibility="collapsed")
+    go = c2.button("Unterlagen auswerten", type="primary", use_container_width=True)
+    if msg := st.session_state.pop("pid_scan_msg", None):
+        (st.success if msg[0] == "ok" else st.warning)(msg[1])
     if go:
         if not files_up:
             st.error("Bitte zuerst Fotos oder PDFs auswählen.")
         else:
             try:
-                new_id = store.create_case(label or "Neuer Fall", [(f.name, f.getvalue()) for f in files_up])
+                new_id = store.create_case(label.strip() or "Neuer Fall", [(f.name, f.getvalue()) for f in files_up])
             except RuntimeError as e:
                 st.error(str(e))
                 st.stop()
             _process(store.pages_dir(store.PRIVATE_ROOT / new_id), store.out_dir(new_id), engine, False, extractor)
             st.session_state.case_id = new_id
             st.session_state.pop("case_pick", None)      # picker shows the new case on the next run
+            st.session_state.pop("patient_id", None)
             st.rerun()
     html_block("""
 <div class="gw-steps">
