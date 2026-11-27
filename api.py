@@ -7,6 +7,7 @@ Stateless for now: uploads are processed in memory and not stored.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 import cv2
@@ -70,7 +71,8 @@ def ocr(
     if len(files) > MAX_FILES:
         raise HTTPException(413, f"At most {MAX_FILES} files per request.")
 
-    pages: list[Page] = []
+    # 1. Check and decode all uploads first (cheap), 2. then OCR the pages in parallel
+    todo: list[tuple[str, int, np.ndarray]] = []
     for upload in files:
         name = upload.filename or "upload"
         suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -85,21 +87,28 @@ def ocr(
             raise HTTPException(422, f"{name}: could not read file ({e}).") from e
 
         for file_page, pil in enumerate(images, start=1):
-            img = cv2.cvtColor(np.array(pil.convert("RGB")), cv2.COLOR_RGB2BGR)
-            clean, steps = preprocess(img)
-            try:
-                lines = merge_rows(read_text(clean, engine))
-            except Exception as e:
-                raise HTTPException(502, f"{name} page {file_page}: OCR failed ({e}).") from e
-            confs = [l.confidence for l in lines if l.confidence is not None]
-            info = {"sharpness": round(sharpness(to_gray(img))),
-                    "mean_confidence": round(sum(confs) / len(confs), 2) if confs else None}
-            pages.append(Page(
-                page=len(pages) + 1, file=name, file_page=file_page,
-                quality=page_quality(info), steps=steps, **info,
-                text="\n".join(l.text for l in lines),
-                lines=[Line(text=l.text, confidence=l.confidence, bbox=l.bbox) for l in lines],
-            ))
+            todo.append((name, file_page, cv2.cvtColor(np.array(pil.convert("RGB")), cv2.COLOR_RGB2BGR)))
+
+    def read_one(number: int, job: tuple[str, int, np.ndarray]) -> Page:
+        name, file_page, img = job
+        clean, steps = preprocess(img)
+        try:
+            lines = merge_rows(read_text(clean, engine))
+        except Exception as e:
+            raise HTTPException(502, f"{name} page {file_page}: OCR failed ({e}).") from e
+        confs = [l.confidence for l in lines if l.confidence is not None]
+        info = {"sharpness": round(sharpness(to_gray(img))),
+                "mean_confidence": round(sum(confs) / len(confs), 2) if confs else None}
+        return Page(
+            page=number, file=name, file_page=file_page,
+            quality=page_quality(info), steps=steps, **info,
+            text="\n".join(l.text for l in lines),
+            lines=[Line(text=l.text, confidence=l.confidence, bbox=l.bbox) for l in lines],
+        )
+
+    # map keeps the page order; an HTTPException from one page is raised again here
+    with ThreadPoolExecutor(max_workers=min(config.OCR_WORKERS, max(1, len(todo)))) as pool:
+        pages = list(pool.map(read_one, range(1, len(todo) + 1), todo))
 
     return OCRResponse(engine=engine, page_count=len(pages),
                        text="\n\n".join(p.text for p in pages), pages=pages)
