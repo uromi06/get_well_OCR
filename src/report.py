@@ -18,6 +18,7 @@ writes a short narrative tomorrow (from the same confirmed facts only).
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 LABELS = {
@@ -71,8 +72,22 @@ def _date(iso: str | None, L: dict) -> str:
     return datetime.strptime(iso, "%Y-%m-%d").strftime("%d.%m.%Y") if iso else L["no_date"]
 
 
+SHOW_SOURCES = False     # set per call; module default for the handover: no page references
+
+
 def _src(pages, L) -> str:
-    return f"[{L['pages']} " + ", ".join(str(p) for p in sorted(set(pages))) + "]" if pages else ""
+    if not SHOW_SOURCES or not pages:
+        return ""
+    return f"[{L['pages']} " + ", ".join(str(p) for p in sorted(set(pages))) + "]"
+
+
+def _clean(text: str) -> str:
+    """Remove page references inside generated texts, e.g. '(S. 2, 2026-09-18)' or 'laut S. 3'."""
+    if SHOW_SOURCES:
+        return text
+    text = re.sub(r"\s*\((?:S\.|p\.)\s*\d+[^)]*\)", "", text)
+    text = re.sub(r"\blaut S\.\s*\d+", "laut Dokument", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 def _page_range(pages) -> str:
@@ -88,8 +103,17 @@ def _table(rows: list[list[str]]) -> list[str]:
 
 
 def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
-              confirmed: bool = False, reviewer: str = "") -> str:
-    """Plain-text ER handover. `meds` = doctor-reviewed rows (defaults to the machine list)."""
+              confirmed: bool = False, reviewer: str = "", resolved: list[int] | None = None,
+              show_sources: bool = False) -> str:
+    """Plain-text ER handover.
+
+    meds         doctor-reviewed rows (defaults to the machine list)
+    resolved     indices of conflicts the doctor marked as clarified: left out of the text
+    show_sources add [S. x] page references (off by default: the app shows them, the text stays clean)
+    """
+    global SHOW_SOURCES
+    SHOW_SOURCES = show_sources
+    resolved = set(resolved or [])
     L, T = LABELS[lang], TYPE_NAMES[lang]
     s, docs = result["summary"], result["documents"]
     doc_pages = {d["doc_id"]: d["pages"] for d in docs}
@@ -101,8 +125,9 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     relevant = [d for d in docs if d["type"] != "irrelevant"]
     for d in sorted(relevant, key=lambda d: d["date"] or "0000", reverse=True):
         issuer = f", {d['issuer']}" if d.get("issuer") else ""
+        pages = f" [{L['pages']} {_page_range(d['pages'])}]" if show_sources else ""
         out.append(f"- {T.get(d['type'], d['type'])} {L['dated'] if d['date'] else ''} {_date(d['date'], L)}"
-                   f"{issuer} [{L['pages']} {_page_range(d['pages'])}]".replace("  ", " "))
+                   f"{issuer}{pages}".replace("  ", " "))
     skipped = [f"{L['pages']} {p['page']} ({L['retake']})" for p in result["pages"] if p["status"] == "retake"]
     skipped += [f"{L['pages']} {_page_range(d['pages'])} ({L['irrelevant']})" for d in docs if d["type"] == "irrelevant"]
     if skipped:
@@ -115,7 +140,9 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     # --- diagnoses -------------------------------------------------------------------------
     if s["diagnoses"]:
         out += ["", L["dx"]]
-        out += [f"- {d['text']}{' (' + d['icd10'] + ')' if d['icd10'] else ''} {_src(d['sources'], L)}" for d in s["diagnoses"]]
+        for d in s["diagnoses"]:
+            out.append(f"- {d['text']}{' (' + d['icd10'] + ')' if d['icd10'] else ''} {_src(d['sources'], L)}".rstrip())
+            out += [f"    - {det}" for det in d.get("details", [])]
 
     # --- medication ------------------------------------------------------------------------
     current = [m for m in meds if m["status"] in ("active", "new")]
@@ -138,13 +165,17 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     if stopped:
         out += [L["stopped"]] + [f"- {m['name']} ({L['status'][m['status']]}) {_src(pages_of(m), L)}"
                                  for m in stopped]
+    for f in s.get("findings", []):
+        if f["text"].startswith("Korrektur"):
+            out.append(f"{f['text']} {_src(f['sources'], L)}".rstrip())
     out.append(L["confirmed"].format(by=f": {reviewer}" if reviewer else "") if confirmed else L["unconfirmed"])
 
     # --- conflicts and warnings ------------------------------------------------------------
-    if s["conflicts"]:
-        out += ["", L["clarify"], *[f"- {c['text']} {_src(c['sources'], L)}" for c in s["conflicts"]]]
+    open_conflicts = [c for i, c in enumerate(s["conflicts"]) if i not in resolved]
+    if open_conflicts:
+        out += ["", L["clarify"], *[f"- {_clean(c['text'])} {_src(c['sources'], L)}".rstrip() for c in open_conflicts]]
     if s["warnings"]:
-        out += ["", L["warn"], *[f"- {w['text']} {_src(w['sources'], L)}" for w in s["warnings"]]]
+        out += ["", L["warn"], *[f"- {_clean(w['text'])} {_src(w['sources'], L)}".rstrip() for w in s["warnings"]]]
 
     # --- labs ------------------------------------------------------------------------------
     flagged = [l for l in s["labs"] if l["flag"]]
@@ -159,7 +190,8 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     for d in sorted(relevant, key=lambda d: d["date"] or "9999"):
         pages = set(doc_pages[d["doc_id"]])
         facts = [f"{x['text']}" for x in s["diagnoses"] if set(x["sources"]) & pages]
-        facts += [x["text"] for x in s.get("findings", []) if set(x["sources"]) & pages]
+        facts += [x["text"] for x in s.get("findings", []) if set(x["sources"]) & pages
+                  and not x["text"].startswith("Korrektur")]
         facts += [x["text"] for x in s["cave"] if set(x["sources"]) & pages and "Antikoagulation" not in x["text"]]
         facts = list(dict.fromkeys(facts))[:4]
         if facts:
@@ -173,5 +205,6 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     if s["contacts"]:
         out += ["", L["contact"], *[f"- {c['text']} {_src(c['sources'], L)}" for c in s["contacts"]]]
 
-    out += ["", L["footer"].format(ts=datetime.now().strftime("%d.%m.%Y %H:%M"))]
-    return "\n".join(out)
+    footer = L["footer"] if show_sources else L["footer"].split(".")[0] + "."
+    out += ["", footer.format(ts=datetime.now().strftime("%d.%m.%Y %H:%M"))]
+    return "\n".join(line.rstrip() for line in out)

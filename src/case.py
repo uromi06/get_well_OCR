@@ -204,8 +204,15 @@ MED_HEADINGS = re.compile(r"^\W*(Therapie|Medikation\w*|Aktuelle Medikation|Entl
 DX_HEADINGS = re.compile(r"^\W*((Haupt|Neben|Dauer)?[Dd]iagnosen?|Vorerkrankungen|Diagnoseliste)\b\s*:?\s*$")
 ANY_HEADING = re.compile(r"^\W*(Anamnese|Befund\w*|Verlauf|Procedere|Empfehlung\w*|Beurteilung|Epikrise|"
                          r"Therapie|Medikation\w*|Diagnosen?|Allergien|Labor\w*|Mit freundlichen|Sozialanamnese|"
-                         r"Körperlicher Untersuchungsbefund|Aufnahmebefund)\b", re.IGNORECASE)
-BULLET = re.compile(r"^\s*[*•·°»\-–—>]\s*")
+                         r"Körperlicher Untersuchungsbefund|Aufnahmebefund|Histologie|Pathologie|Operation|Status|Untersuchung)\b",
+                         re.IGNORECASE)
+BULLET = re.compile(r"^\s*(\d{1,2}[.)]|[*•·°»\-–—>])\s*")
+NUMBERED = re.compile(r"^\s*\d{1,2}[.)]\s+")
+ALLERGY_HEADING = re.compile(r"^\W*(Allergien|Unverträglichkeiten|Allergien\s*/\s*Unverträglichkeiten)\s*:?\s*$",
+                             re.IGNORECASE)
+CORRECTION = re.compile(r"irrtümlich|fälschlich|Korrektur\b|korrigiert", re.IGNORECASE)
+CORRECT_VALUE = re.compile(r"korrekt\w*[^.]*?(\d+(?:[.,]\d+)?)\s*(mg|µg|ug|g|IE)\b\s*((?:\d|½)\s*-\s*(?:\d|½)\s*-"
+                           r"\s*(?:\d|½)(?:\s*-\s*(?:\d|½))?)?", re.IGNORECASE)
 AS_NEEDED_RX = re.compile(r"\bb\.\s?B\.|\bbei Bedarf\b|\bbei (schwer\w*|starke\w*)?\s*(Hypo\w*|Schmerz\w*|Atemnot|"
                           r"Übelkeit|Unruhe|Fieber|Schlaflosigkeit)", re.IGNORECASE)
 ANTICOAGULANTS = {"Apixaban", "Rivaroxaban", "Edoxaban", "Dabigatran", "Phenprocoumon"}
@@ -263,19 +270,68 @@ def extract_page(p: dict) -> dict:
     facts = {"meds": [], "diagnoses": [], "labs": [], "cave": [], "contacts": [], "negatives": [], "findings": []}
     doc_type, page = p.get("doc_type"), p["page"]
     previous = ""
-    section = None                                   # "meds" | "dx" | None, from the headings in a letter
-    for l in p["lines"]:
+    section = None                                   # "meds" | "dx" | "allergy" | None, from the headings
+    numbered_dx = False
+    allergy_items = 0
+    lines = p["lines"]
+
+    # corrections ("Dosis irrtümlich mit 8 mg angegeben. Die korrekte Dosis beträgt 16 mg 1-0-0"):
+    # the corrected value is authoritative, the wrong one must not become a medication or a conflict
+    consumed = set()
+    for i, l in enumerate(lines):
+        if not CORRECTION.search(l["text"]):
+            continue
+        block_idx = [i] + ([i + 1] if i + 1 < len(lines) else [])
+        block = " ".join(lines[j]["text"] for j in block_idx)
+        drugs_in_block = find_drugs(block)
+        right = CORRECT_VALUE.search(block)
+        if drugs_in_block and right:
+            drug = drugs_in_block[0][0]
+            wrong = re.search(r"irrtümlich[^.]*?(\d+(?:[.,]\d+)?\s*(?:mg|µg|g|IE))", block, re.IGNORECASE)
+            facts["meds"].append({"name": drug, "strength": f"{right.group(1)} {right.group(2)}",
+                                  "dosing": re.sub(r"\s+", "", right.group(3)) if right.group(3) else None,
+                                  "status": None, "confidence": l["conf"], "correction": True,
+                                  "page": page, "doc_id": p.get("doc_id"), "source_text": block})
+            right_dosing = re.sub(r"\s+", "", right.group(3)) if right.group(3) else ""
+            note = f"{drug}: korrekt {right.group(1)} {right.group(2)} {right_dosing}".strip()
+            note += f" (zuvor irrtümlich {wrong.group(1)} angegeben)" if wrong else " (laut Korrektur im Dokument)"
+            facts["findings"].append({"fact": "Korrektur: " + note, "page": page, "doc_id": p.get("doc_id"),
+                                      "source_text": block})
+            consumed.update(block_idx)
+
+    for idx, l in enumerate(lines):
         text, conf = l["text"], l["conf"]
         low = text.lower()
         src = {"page": page, "doc_id": p.get("doc_id"), "source_text": text}
+        if idx in consumed:
+            previous = text
+            continue
         if MED_HEADINGS.match(text):
             section = "meds"
             continue
         if DX_HEADINGS.match(text):
-            section = "dx"
+            section, numbered_dx = "dx", False
+            continue
+        if ALLERGY_HEADING.match(text):
+            section, allergy_items = "allergy", 0
             continue
         if ANY_HEADING.match(text) and not BULLET.match(text):
             section = None
+
+        # allergies listed under an "Allergien" heading: a short list. A non-bullet line after the
+        # first item (e.g. the next heading "Histologie (...)") ends the section.
+        if section == "allergy" and text.strip():
+            if allergy_items and not BULLET.match(text):
+                section = None
+            else:
+                allergy_items += 1
+        if section == "allergy" and text.strip():
+            item = BULLET.sub("", text).strip(" -·:;,|")
+            if re.search(r"keine|nicht bekannt|k\.\s?A\.", item, re.IGNORECASE):
+                facts["negatives"].append({"category": "allergy", "fact": "Allergien: keine bekannt", **src})
+            elif re.search(r"[A-Za-zÄÖÜäöü]{4,}", item) and len(item) <= 80:
+                facts["cave"].append({"category": "allergy", "fact": f"Allergie: {item}", **src})
+            continue
 
         # medications (table rows and prose)
         drugs = find_drugs(text)
@@ -305,12 +361,27 @@ def extract_page(p: dict) -> dict:
                                       "status": line_status(item), "confidence": conf, "unknown": True, **src})
 
         # diagnoses listed under a "Diagnosen" heading, without an ICD code
-        if section == "dx" and BULLET.match(text) and not ICD10.search(fix_icd(text)) and doc_type != "lab_report":
-            label = BULLET.sub("", text).strip(" -·:;,|").lstrip("(")
-            if label.count("(") > label.count(")"):
-                label += ")"
-            if len(label) >= 4:
-                facts["diagnoses"].append({"text": label, "icd10": None, **src})
+        #   "1. Main diagnosis"            -> new diagnosis
+        #   line without bullet            -> continuation of the line above (wrapped text)
+        #   "- Z.n. ..." under a numbered  -> detail of that diagnosis
+        if section == "dx" and doc_type != "lab_report" and not ICD10.search(fix_icd(text)):
+            sec_dx = [d for d in facts["diagnoses"] if d.get("from_section")]
+            label = BULLET.sub("", text).strip(" -–—·:;,|")
+            if NUMBERED.match(text):
+                numbered_dx = True
+                if len(label) >= 4:
+                    facts["diagnoses"].append({"text": label, "icd10": None, "details": [], "from_section": True, **src})
+            elif BULLET.match(text):
+                if numbered_dx and sec_dx:
+                    sec_dx[-1]["details"].append(label)
+                elif len(label) >= 4:
+                    facts["diagnoses"].append({"text": label, "icd10": None, "details": [], "from_section": True, **src})
+            elif sec_dx and label:
+                target = sec_dx[-1]
+                if target["details"]:
+                    target["details"][-1] += " " + label
+                else:
+                    target["text"] += " " + label
 
         # diagnoses: every ICD code on the line, with the words in front of it
         fixed, prev = fix_icd(text), 0
@@ -402,6 +473,9 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
         stops = sorted([m for m in recent if m["status"] in ("stopped", "paused")], key=lambda m: m["date"] or "9999")
         news = [m for m in recent if m["status"] == "new"]
         latest = concrete[-1] if concrete else recent[-1]
+        corrections = [m for m in recent if m.get("correction")]
+        if corrections:                              # an explicit correction in a document wins
+            latest = corrections[-1]
         status = "active"
         if stops and (stops[-1]["date"] or "9999") >= (latest["date"] or ""):
             status = stops[-1]["status"]
@@ -411,7 +485,7 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
         current.append({"name": name, "strength": latest["strength"], "dosing": latest["dosing"],
                         "status": status, "sources": sources, "unknown": any(m.get("unknown") for m in mentions)})
         variants = {(_norm(m["strength"]), _norm(m["dosing"])) for m in concrete if m["strength"]}
-        if len({v[0] for v in variants}) > 1:
+        if len({v[0] for v in variants}) > 1 and not corrections:
             detail = " vs. ".join(f"{m['strength'] or '?'} {m['dosing'] or ''} (S. {m['page']}, {m['date'] or 'ohne Datum'})"
                                   for m in concrete if m["strength"])
             conflicts.append({"text": f"{name}: unterschiedliche Angaben – {detail}",
@@ -478,8 +552,11 @@ def merge(pages: list[dict], docs: list[dict]) -> dict:
     for d in sorted(all_facts["diagnoses"], key=lambda d: d["date"] or "", reverse=True):
         key = d["icd10"] or re.sub(r"\W+", "", d["text"].lower())[:40]
         if key not in diags:
-            diags[key] = {"text": d["text"], "icd10": d["icd10"], "date": d["date"], "sources": set()}
+            diags[key] = {"text": d["text"], "icd10": d["icd10"], "date": d["date"], "sources": set(), "details": []}
         diags[key]["sources"].add(d["page"])
+        for det in d.get("details", []):
+            if det not in diags[key]["details"]:
+                diags[key]["details"].append(det)
 
     return {
         "cave": cave_out,

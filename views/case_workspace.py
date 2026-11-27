@@ -222,14 +222,16 @@ with tabs[0]:
         st.caption("Abgeglichen aus allen Dokumenten. Prüfen und bestätigen im Tab 💊 Medikation.")
         html_block(section("Diagnosen", [
             f"{esc(d['text'])}{' <span class=gw-muted>' + esc(d['icd10']) + '</span>' if d['icd10'] else ''}"
-            f"{sources(d['sources'])}" for d in summary["diagnoses"][:12]]))
+            f"{sources(d['sources'])}"
+            + ("".join(f"<br><span class='gw-muted'>– {esc(x)}</span>" for x in d.get("details", [])))
+            for d in summary["diagnoses"][:12]]))
         html_block(card("Kontakt / Vorsorgevollmacht", [f"{esc(c['text'])}{sources(c['sources'])}"
                                                         for c in summary["contacts"]], "ok",
                         "Keine Kontaktperson gefunden."))
     st.markdown("##### Übergabetext (Entwurf)")
     st.caption("Format der Notaufnahme. Endgültige Fassung mit bestätigter Medikation im Tab ⬇ Export.")
-    st.code(er_report(result, review["meds"], "de", confirmed=n_unconfirmed == 0, reviewer=review.get("reviewer", "")),
-            language=None, wrap_lines=True)
+    st.code(er_report(result, review["meds"], "de", confirmed=n_unconfirmed == 0, reviewer=review.get("reviewer", ""),
+                      resolved=review["conflicts_ok"]), language=None, wrap_lines=True)
 
 # ================================================================== tab: pages
 
@@ -405,7 +407,9 @@ with tabs[5]:
     confirmed_summary = {**summary, "medications": confirmed_meds}
     rep_lang = st.segmented_control("Sprache des Übergabetexts", ["de", "en"], default="de",
                                     format_func={"de": "Deutsch", "en": "English"}.get, key=f"rl_{case_id}") or "de"
-    er_text = er_report(result, confirmed_meds, rep_lang, confirmed=ready, reviewer=review.get("reviewer", ""))
+    with_src = st.toggle("Quellseiten [S. x] im Text anzeigen", value=False, key=f"src_{case_id}")
+    er_text = er_report(result, confirmed_meds, rep_lang, confirmed=ready, reviewer=review.get("reviewer", ""),
+                        resolved=review["conflicts_ok"], show_sources=with_src)
     stamp = f"{datetime.now():%Y%m%d-%H%M}"
 
     st.markdown("##### Übergabetext für das Krankenhaussystem")
