@@ -95,7 +95,8 @@ def meta() -> dict:
         "login_configured": auth.credentials() is not None,
         "engines": [{"id": "tesseract", "label": "Tesseract", "available": True},
                     {"id": "mistral", "label": "Mistral OCR", "available": mistral.ocr_available()}],
-        "default_engine": "mistral" if config.OCR_ENGINE == "mistral" else "tesseract",
+        # The PWA reads with Mistral OCR by default; Tesseract only if Mistral is not set up on this server
+        "default_engine": "mistral" if mistral.ocr_available() else "tesseract",
         "chat_available": mistral.chat_available(),
         "doc_types": {k: {"label": v, "color": DOC_TYPE_COLORS.get(k, "#94a3b8")}
                       for k, v in DOC_TYPE_LABELS.items() if k},
