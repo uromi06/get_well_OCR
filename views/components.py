@@ -43,40 +43,99 @@ FACT_LABELS = {"meds": "Medikation", "diagnoses": "Diagnose", "labs": "Labor", "
 
 CSS = """
 <style>
-.block-container {padding-top: 3.2rem; padding-bottom: 3rem; max-width: 1400px;}
-h1, h2, h3 {letter-spacing: -0.01em;}
-.gw-header {display:flex; align-items:center; justify-content:space-between; gap:1rem;
-            padding: .9rem 1.1rem; border:1px solid #e2e8f0; border-radius:14px; background:#f8fafc;
-            margin-bottom: .8rem;}
-.gw-header .name {font-size:1.35rem; font-weight:700; color:#0f172a;}
-.gw-header .meta {color:#475569; font-size:.92rem;}
-.gw-chip {display:inline-block; padding:.12rem .5rem; margin:0 .25rem .25rem 0; border-radius:999px;
-          font-size:.76rem; font-weight:600; background:#e2e8f0; color:#334155; white-space:nowrap;}
-.gw-src {display:inline-block; padding:.02rem .38rem; margin-left:.2rem; border-radius:6px; font-size:.72rem;
-         font-weight:600; background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; white-space:nowrap;}
-.gw-card {border-radius:12px; padding:.85rem 1rem; margin-bottom:.7rem; border:1px solid;}
-.gw-card h4 {margin:0 0 .45rem 0; font-size:.95rem; letter-spacing:.02em; text-transform:uppercase;}
-.gw-card ul {margin:0; padding-left:1.1rem;}
-.gw-card li {margin:.18rem 0; line-height:1.45;}
-.gw-cave {background:#fef2f2; border-color:#fecaca;} .gw-cave h4 {color:#b91c1c;}
-.gw-warn {background:#fffbeb; border-color:#fde68a;} .gw-warn h4 {color:#b45309;}
-.gw-info {background:#f8fafc; border-color:#e2e8f0;} .gw-info h4 {color:#334155;}
-.gw-ok {background:#f0fdf4; border-color:#bbf7d0;} .gw-ok h4 {color:#15803d;}
-.gw-thumbcap {font-size:.78rem; line-height:1.3; margin-top:.15rem;}
-.gw-badge {display:inline-block; padding:.05rem .4rem; border-radius:6px; font-size:.7rem; font-weight:700;
-           color:white;}
-.gw-muted {color:#64748b; font-size:.85rem;}
-.gw-conflict {padding:.5rem .75rem; border-left:4px solid #f59e0b; background:#fffbeb; border-radius:6px;
-              font-size:.92rem; line-height:1.45;}
-.gw-conflict.done {border-left-color:#16a34a; background:#f0fdf4; color:#64748b;}
-@media (prefers-color-scheme: dark) {
-  .gw-header {background:#0f172a; border-color:#334155;} .gw-header .name {color:#f1f5f9;}
-  .gw-header .meta, .gw-muted {color:#94a3b8;}
-  .gw-chip {background:#334155; color:#e2e8f0;}
-  .gw-src {background:#1e1b4b; color:#c7d2fe; border-color:#3730a3;}
-  .gw-conflict {background:#2a2010;} .gw-conflict.done {background:#0c1f14;}
-  .gw-cave {background:#2a1215;} .gw-warn {background:#2a2010;} .gw-info {background:#0f172a;} .gw-ok {background:#0c1f14;}
+@import url("https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap");
+:root {
+  --paper:#FAFBFC; --panel:#F1F4F7; --line:#D9E0E6; --ink:#14232E; --ink-2:#4A5B68; --ink-3:#7A8894;
+  --cave:#B4182D; --cave-bg:#FBEFF1; --amber:#9A6212; --amber-bg:#FBF4E6;
+  --action:#0F5E7A; --action-bg:#E7F1F5; --ok:#2E7550; --ok-bg:#EAF4EE;
 }
+.stApp, .stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5,
+.stApp input, .stApp textarea, .stApp button, .stApp table, .stApp td, .stApp th, .stApp div {
+  font-family: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+[data-testid="stIconMaterial"], .material-symbols-rounded, span[class*="material"] {
+  font-family: "Material Symbols Rounded" !important;
+}
+.stApp {background: var(--paper);}
+.block-container {padding-top: 2.6rem; padding-bottom: 3rem; max-width: 1360px;}
+h1, h2, h3, h4, h5 {color: var(--ink); letter-spacing: -0.005em;}
+code {font-family: "Atkinson Hyperlegible", monospace !important;}
+.stCode code, pre code {font-family: ui-monospace, "Cascadia Mono", Consolas, monospace !important; font-size:.86rem;}
+/* patient header: the name is the headline, like the top of a paper chart */
+.gw-patient {display:flex; justify-content:space-between; align-items:flex-end; gap:1.5rem; flex-wrap:wrap;
+             padding:.2rem 0 1rem 0; border-bottom:2px solid var(--ink); margin-bottom:1rem;}
+.gw-patient .name {font-size:2.1rem; font-weight:700; color:var(--ink); line-height:1.1;}
+.gw-patient .who {font-size:1.05rem; color:var(--ink-2); margin-top:.3rem;}
+.gw-patient .who b {color:var(--ink);}
+.gw-patient .side {text-align:right; color:var(--ink-3); font-size:.85rem; line-height:1.6;}
+.gw-tag {display:inline-block; padding:.08rem .5rem; border-radius:4px; font-size:.78rem; font-weight:700;
+         border:1px solid var(--line); color:var(--ink-2); background:white; margin-left:.3rem;}
+.gw-tag.fict {color:var(--cave); border-color:#E7B7BF; background:var(--cave-bg);}
+/* status strip: one line, every label fully readable */
+.gw-strip {display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); border:1px solid var(--line);
+           border-radius:10px; background:white; margin-bottom:1rem; overflow:hidden;}
+.gw-strip > div {padding:.7rem .95rem; border-left:1px solid var(--line);}
+.gw-strip > div:first-child {border-left:none;}
+.gw-strip .v {font-size:1.55rem; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; line-height:1.15;}
+.gw-strip .l {font-size:.84rem; color:var(--ink-2); line-height:1.3;}
+.gw-strip .bad .v {color:var(--cave);} .gw-strip .warn .v {color:var(--amber);} .gw-strip .good .v {color:var(--ok);}
+@media (max-width: 900px) {.gw-strip {grid-template-columns:repeat(3, minmax(0,1fr));}
+  .gw-strip > div:nth-child(4) {border-left:none;} .gw-strip > div:nth-child(n+4) {border-top:1px solid var(--line);}}
+/* CAVE: the one loud element */
+.gw-cave {border-left:6px solid var(--cave); background:var(--cave-bg); border-radius:0 10px 10px 0;
+          padding:.9rem 1.1rem 1rem 1.1rem; margin-bottom:1rem;}
+.gw-cave .stamp {display:inline-block; color:var(--cave); border:2px solid var(--cave); border-radius:4px;
+                 padding:0 .45rem; font-weight:700; font-size:1.05rem; letter-spacing:.06em; margin-bottom:.55rem;}
+.gw-cave ul {margin:0; padding-left:1.1rem;} .gw-cave li {margin:.28rem 0; color:var(--ink); font-size:1.02rem;}
+.gw-cave li b {color:var(--ink);}
+/* quiet sections */
+.gw-sec {margin:0 0 1.1rem 0;}
+.gw-sec h4 {font-size:1.02rem; margin:0 0 .45rem 0; color:var(--ink); font-weight:700;}
+.gw-sec ul {margin:0; padding-left:1.1rem;} .gw-sec li {margin:.22rem 0; color:var(--ink); line-height:1.45;}
+.gw-sec .empty {color:var(--ink-3); font-size:.92rem;}
+.gw-note {border-left:4px solid var(--amber); background:var(--amber-bg); border-radius:0 8px 8px 0;
+          padding:.6rem .9rem; margin-bottom:1rem;}
+.gw-note h4 {color:var(--amber); font-size:1rem; margin:0 0 .3rem 0;}
+.gw-note ul {margin:0; padding-left:1.1rem;} .gw-note li {color:var(--ink); margin:.2rem 0;}
+.gw-contact {border-left:4px solid var(--ok); background:var(--ok-bg); border-radius:0 8px 8px 0; padding:.6rem .9rem;}
+.gw-contact h4 {color:var(--ok); font-size:1rem; margin:0 0 .3rem 0;}
+/* medication table */
+.gw-meds {width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; background:white;
+          border:1px solid var(--line); border-radius:10px; overflow:hidden;}
+.gw-meds th {text-align:left; font-size:.8rem; font-weight:700; color:var(--ink-2); background:var(--panel);
+             padding:.45rem .6rem; border-bottom:1px solid var(--line);}
+.gw-meds td {padding:.45rem .5rem; border-bottom:1px solid #EDF1F4; color:var(--ink); font-size:.95rem; vertical-align:top;}
+.gw-meds tr:last-child td {border-bottom:none;}
+.gw-meds td.n {font-weight:700;}
+.gw-meds td.k, .gw-meds th.k {white-space:nowrap;}
+.gw-meds td.src {line-height:1.9;}
+.gw-meds tr.off td.n, .gw-meds tr.off td.k:not(.src) {color:var(--ink-3); text-decoration:line-through;}
+.gw-meds tr.off td.src {text-decoration:none;}
+.gw-st {font-size:.75rem; font-weight:700; padding:.05rem .4rem; border-radius:4px;}
+.gw-st.new {background:var(--action-bg); color:var(--action);} .gw-st.paused, .gw-st.stopped {background:#EEF0F2; color:var(--ink-2);}
+.gw-st.unk {background:var(--amber-bg); color:var(--amber);}
+.gw-ok {color:var(--ok); font-weight:700;}
+/* page references: small tabs like the edge of a paper page */
+.gw-src {display:inline-block; padding:0 .32rem; margin-left:.25rem; border-radius:3px; font-size:.74rem;
+         font-weight:700; background:var(--action-bg); color:var(--action); white-space:nowrap;
+         font-variant-numeric:tabular-nums;}
+.gw-chip {display:inline-block; padding:.08rem .45rem; margin:0 .25rem .25rem 0; border-radius:4px;
+          font-size:.76rem; font-weight:700; background:var(--panel); color:var(--ink-2); white-space:nowrap;}
+.gw-muted {color:var(--ink-3); font-size:.88rem;}
+.gw-thumbcap {font-size:.82rem; line-height:1.35; margin-top:.2rem; color:var(--ink-2);}
+.gw-conflict {padding:.55rem .8rem; border-left:4px solid var(--amber); background:var(--amber-bg);
+              border-radius:0 8px 8px 0; font-size:.95rem; line-height:1.45; color:var(--ink);}
+.gw-conflict.done {border-left-color:var(--ok); background:var(--ok-bg); color:var(--ink-3);}
+.gw-card {border-radius:10px; padding:.85rem 1rem; margin-bottom:.8rem; border:1px solid var(--line); background:white;}
+.gw-card h4 {margin:0 0 .45rem 0; font-size:1rem; color:var(--ink);}
+.gw-card ul {margin:0; padding-left:1.1rem;} .gw-card li {margin:.18rem 0; line-height:1.45; color:var(--ink);}
+.gw-card.gw-cavecard {border-color:#E7B7BF; background:var(--cave-bg);} .gw-card.gw-cavecard h4 {color:var(--cave);}
+/* Streamlit widgets in our palette */
+.stTabs [data-baseweb="tab-list"] {gap:1.2rem; border-bottom:1px solid var(--line);}
+.stTabs [data-baseweb="tab"] {font-size:1rem; padding:.5rem 0;}
+div[data-testid="stSidebar"] {background:var(--panel); border-right:1px solid var(--line);}
+*:focus-visible {outline:3px solid var(--action) !important; outline-offset:2px;}
+@media (prefers-reduced-motion: reduce) {* {transition:none !important; animation:none !important;}}
 </style>
 """
 
@@ -99,13 +158,14 @@ def doc_chip(doc_type) -> str:
 
 
 def sources(pages) -> str:
-    return "".join(f'<span class="gw-src">S.&nbsp;{esc(p)}</span>' for p in pages or [])
+    return "".join(f'<span class="gw-src" title="Quelle: Seite {esc(p)}">S.&nbsp;{esc(p)}</span>' for p in pages or [])
 
 
 def card(title: str, items: list[str], kind: str = "info", empty: str = "Keine Angaben gefunden.") -> str:
     """items are already-escaped HTML snippets."""
     body = "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>" if items else f'<span class="gw-muted">{esc(empty)}</span>'
-    return f'<div class="gw-card gw-{kind}"><h4>{esc(title)}</h4>{body}</div>'
+    cls = {"cave": "gw-card gw-cavecard", "warn": "gw-note", "ok": "gw-contact"}.get(kind, "gw-card")
+    return f'<div class="{cls}"><h4>{esc(title)}</h4>{body}</div>'
 
 
 def html_block(markup: str):
@@ -159,3 +219,42 @@ def legend() -> str:
     def hexcol(bgr):
         return "#%02x%02x%02x" % (bgr[2], bgr[1], bgr[0])
     return "".join(chip(FACT_LABELS[k], hexcol(c)) for k, c in FACT_COLORS_BGR.items() if k != "negatives")
+
+
+def section(title: str, items: list[str], empty: str = "Nichts gefunden.") -> str:
+    body = "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>" if items else f'<div class="empty">{esc(empty)}</div>'
+    return f'<div class="gw-sec"><h4>{esc(title)}</h4>{body}</div>'
+
+
+def cave_panel(items: list[str]) -> str:
+    body = "<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>" if items else \
+        '<div class="gw-muted">Keine CAVE-Angaben in den Dokumenten gefunden. Bitte trotzdem erfragen.</div>'
+    return f'<div class="gw-cave"><span class="stamp">CAVE</span>{body}</div>'
+
+
+def strip(cells: list[tuple]) -> str:
+    """cells: (value, label, tone) with tone in '', 'bad', 'warn', 'good'."""
+    return '<div class="gw-strip">' + "".join(
+        f'<div class="{tone}"><div class="v">{esc(v)}</div><div class="l">{esc(l)}</div></div>'
+        for v, l, tone in cells) + "</div>"
+
+
+def med_table(rows: list[dict]) -> str:
+    labels = {"new": "neu", "paused": "pausiert", "stopped": "abgesetzt"}
+    out = ['<div style="overflow-x:auto"><table class="gw-meds"><thead><tr><th>Wirkstoff</th><th class="k">Stärke</th><th class="k">Dosierung</th>'
+           '<th></th><th>Quelle</th></tr></thead><tbody>']
+    for r in rows:
+        off = r["status"] in ("stopped", "paused")
+        tags = ""
+        if r["status"] in labels:
+            tags += f'<span class="gw-st {r["status"]}">{labels[r["status"]]}</span> '
+        if r.get("flag"):
+            tags += '<span class="gw-st unk">prüfen</span> '
+        if r.get("confirmed"):
+            tags += '<span class="gw-ok" title="ärztlich bestätigt">✓</span>'
+        pages = [x.strip() for x in str(r["sources"]).split(",") if x.strip()]
+        out.append(f'<tr class="{"off" if off else ""}"><td class="n">{esc(r["name"])}</td>'
+                   f'<td class="k">{esc(r["strength"] or "–")}</td><td class="k">{esc(r["dosing"] or "–")}</td><td>{tags}</td>'
+                   f'<td class="src k"><span class="gw-src">S.&nbsp;{esc(", ".join(pages))}</span></td></tr>')
+    out.append("</tbody></table></div>")
+    return "".join(out)

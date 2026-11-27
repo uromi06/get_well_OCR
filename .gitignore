@@ -26,3 +26,5 @@ outputs/*.csv.vs/
 data/cases/*/stress/
 outputs/stress/
 outputs/cases/
+# Tesseract language data downloaded by start.py (re-creatable)
+.tessdata/

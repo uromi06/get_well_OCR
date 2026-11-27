@@ -34,3 +34,5 @@ faker>=22.0
 # Optional: reads the 2D barcode on German medication plans.
 # If it fails to install or load on Windows, comment it out. Nothing else depends on it.
 pylibdmtx>=0.1.10
+scikit-learn>=1.4            # fallback document classifier
+sentence-transformers>=3.0   # document classifier model (multilingual-e5-small, downloads ~120 MB once)

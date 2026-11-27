@@ -115,7 +115,7 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
     # --- diagnoses -------------------------------------------------------------------------
     if s["diagnoses"]:
         out += ["", L["dx"]]
-        out += [f"- {d['text']} ({d['icd10']}) {_src(d['sources'], L)}" for d in s["diagnoses"]]
+        out += [f"- {d['text']}{' (' + d['icd10'] + ')' if d['icd10'] else ''} {_src(d['sources'], L)}" for d in s["diagnoses"]]
 
     # --- medication ------------------------------------------------------------------------
     current = [m for m in meds if m["status"] in ("active", "new")]
