@@ -31,16 +31,22 @@ jobs:
       - name: Build image
         run: docker build -t gwo:ci .
 
-      - name: Smoke test (/health)
+      - name: Smoke test (API /health, Streamlit app)
         run: |
-          docker run -d --name smoke -p 8000:8000 gwo:ci
-          for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:8000/health; then exit 0; fi
-            sleep 2
-          done
-          echo "::error::container did not become healthy"
-          docker logs smoke
-          exit 1
+          docker run -d --name smoke-api -p 8000:8000 gwo:ci
+          docker run -d --name smoke-app -p 8501:8501 -e APP_USERNAME=ci -e APP_PASSWORD=ci gwo:ci \
+            streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+          check() {
+            for _ in $(seq 1 30); do
+              if curl -fsS "$2"; then echo; return 0; fi
+              sleep 2
+            done
+            echo "::error::$1 did not become healthy"
+            docker logs "$1"
+            return 1
+          }
+          check smoke-api http://localhost:8000/health
+          check smoke-app http://localhost:8501/_stcore/health
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
