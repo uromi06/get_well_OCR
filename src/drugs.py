@@ -65,6 +65,10 @@ DRUGS = {
     "Ampicillin/Sulbactam": None, "Piperacillin/Tazobactam": None, "Cefuroxim": None, "Ceftriaxon": None,
     "Ciprofloxacin": None, "Levofloxacin": None, "Clarithromycin": None, "Doxycyclin": None,
     "Cotrimoxazol": None, "Nitrofurantoin": None, "Fosfomycin": None, "Methotrexat": None,
+    # transplant / immunosuppression and their usual companions
+    "Tacrolimus": None, "Ciclosporin": None, "Everolimus": None, "Sirolimus": None,
+    "Mycophenolatmofetil": None, "Mycophenolsäure": None, "Azathioprin": None, "Belatacept": None,
+    "Valganciclovir": None, "Ganciclovir": None, "Fluconazol": None, "Voriconazol": None,
 }
 
 # brand names and other spellings -> active ingredient (what the summary shows)
@@ -82,6 +86,11 @@ ALIASES = {
     "Brilique": "Ticagrelor", "Plavix": "Clopidogrel", "Clexane": "Enoxaparin", "Lyrica": "Pregabalin",
     "Decortin": "Prednisolon", "Spiriva": "Tiotropium", "Movicol": "Macrogol", "Vigantol": "Colecalciferol",
     "Dekristol": "Colecalciferol", "Zyloric": "Allopurinol", "Glucophage": "Metformin",
+    "Prograf": "Tacrolimus", "Advagraf": "Tacrolimus", "Envarsus": "Tacrolimus", "Modigraf": "Tacrolimus",
+    "Sandimmun": "Ciclosporin", "Certican": "Everolimus", "Rapamune": "Sirolimus",
+    "CellCept": "Mycophenolatmofetil", "Myfortic": "Mycophenolsäure", "Imurek": "Azathioprin",
+    "Nulojix": "Belatacept", "Valcyte": "Valganciclovir", "Diflucan": "Fluconazol",
+    "Cotrim": "Cotrimoxazol", "Sulfamethoxazol/Trimethoprim": "Cotrimoxazol",
 }
 
 _LOWER = {name.lower(): name for name in DRUGS}
