@@ -1112,7 +1112,7 @@ function tabResult(el, d) {
     text: "Diagnosen:\n" + s.diagnoses.slice(0, 12).map((x) => x.text + (x.icd10 ? ` (${x.icd10})` : "")).join("\n") });
   const nOk = rv.meds.filter((m) => m.confirmed).length;
   // dangerous doses / combinations from the AI check: one red line each, inside the medication card
-  const danger = (s.safety || []).map((a) => `${a.drugs.join(" + ")} – ${a.danger}: ${a.issue}${a.action ? `. ${a.action}` : ""}`);
+  const danger = (s.safety || []).map((a) => `${a.drugs.join(" + ")}${a.danger ? ` – ${a.danger}` : ""}: ${a.issue}${a.action ? `. ${a.action}` : ""}`);
   const dangerHtml = danger.length ? `<div class="note cave" title="KI-Prüfung, bitte ärztlich bewerten"><span>${danger.map((t) => `⚠ ${esc(t)}`).join("<br>")}</span></div>` : "";
   blocks.push({ key: "med", title: "Medikation", edit: "review",
     sub: rv.meds.length ? `<span class="card-sub ${nOk === rv.meds.length ? "ok" : "warn"}">${nOk} von ${rv.meds.length} geprüft</span>` : "",

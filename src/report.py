@@ -69,7 +69,8 @@ TYPE_NAMES = {
 
 def safety_label(a: dict) -> str:
     """'Ibuprofen + Apixaban – Blutungsgefahr: NSAR plus orales Antikoagulans. Ibuprofen absetzen'"""
-    return (f"{' + '.join(a['drugs'])} – {a['danger']}: {a['issue']}"
+    danger = f" – {a['danger']}" if a.get("danger") else ""     # older results have no danger field
+    return (f"{' + '.join(a['drugs'])}{danger}: {a['issue']}"
             + (f". {a['action']}" if a.get("action") else ""))
 
 

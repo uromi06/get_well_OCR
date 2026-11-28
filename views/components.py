@@ -241,7 +241,7 @@ def correction_list(items: list[dict]) -> str:
 def safety_list(items: list[dict]) -> str:
     """Compact red lines for dangerous doses / combinations found by the AI layer."""
     rows = "".join(
-        f'<li><b>{esc(" + ".join(a["drugs"]))} – {esc(a["danger"])}:</b> {esc(a["issue"])}'
+        f'<li><b>{esc(" + ".join(a["drugs"]))}{" – " + esc(a["danger"]) if a.get("danger") else ""}:</b> {esc(a["issue"])}'
         f'{". " + esc(a["action"]) if a.get("action") else ""}{sources(a["sources"])}</li>' for a in items)
     return f'<div class="gw-safety" title="KI-Prüfung, bitte ärztlich bewerten"><ul>{rows}</ul></div>'
 
