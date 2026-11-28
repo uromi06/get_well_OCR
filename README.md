@@ -258,7 +258,7 @@ Six people, one weekend, one bag of paper.
 |---|---|---|
 | 🩺 | **Maxwell** · [@maxwellwolfrum](https://github.com/maxwellwolfrum) | ER doctor: clinical requirements, validation of the simulated cases, testing and pitch |
 | 🧠 | **Urmi** · [@uromi06](https://github.com/uromi06) | AI pipeline: classification, extraction, cross-document checks, handover and evaluation |
-| 🧼 | **Subhangee** | Image preprocessing with OpenCV, PaddleOCR evaluation and testing |
+| 🧼 | **Subhangee** · [@Subhangee](https://github.com/Subhangee) | Image preprocessing with OpenCV, PaddleOCR evaluation and testing |
 | ☁️ | **Hoang** · [@hoangStud13](https://github.com/hoangStud13) | AWS deployment, hosting and the phone app UI |
 | 🔐 | **Lennart** · [@KTV02](https://github.com/KTV02) | Launcher, login, Mistral integration, tunneling, deployment and testing |
 | 🎤 | **Peter** · [@PedroLemonade](https://github.com/PedroLemonade) | Pitch, slides and iOS app prototype |
