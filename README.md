@@ -55,9 +55,9 @@ A patient arrives in the ER at night with a **bag of paper**: discharge letters,
 
 **AI where the input is messy** (reading, sorting), **fixed rules where safety needs to be explainable** (what is current, what contradicts), **the doctor decides**.
 
-### 🚧 Work in progress: AI medication safety check
+### 💊 AI medication safety check
 
-Branch [`feature/med-safety-check`](https://github.com/uromi06/get_well_OCR/tree/feature/med-safety-check). With AI extraction, Mistral Large 3 also checks each page for **dangerous doses** (e.g. above the daily maximum, or not matching eGFR, potassium or INR on the same page) and **risky combinations** (e.g. two anticoagulants, anticoagulant + NSAID, "triple whammy").
+With AI extraction, Mistral Large 3 also checks each page for **acutely dangerous doses** (e.g. far above the daily maximum, methotrexate daily instead of weekly, metformin at eGFR < 30 on the same page) and **dangerous combinations** (e.g. two anticoagulants, anticoagulant + NSAID, methotrexate + co-trimoxazole).
 
 - Only acute dangers are shown: each alert is rated *akut / grenzwertig / langfristig* and only *akut* is kept; suboptimal or long-term issues, standard combinations and documented dose adjustments are not flagged
 - Alerts are only kept if every drug they name was extracted from that page, and are dropped when a later document stops the drug
@@ -89,18 +89,28 @@ Skew and noise: at least 9 of 13 facts at the worst level. Fax from level 3: eve
 
 ## 🖥️ The app
 
-<img src="docs/img/medication_review.jpg" alt="Medication review table">
+<table>
+<tr>
+<td width="34%" valign="top"><img src="docs/img/phone_app.jpg" alt="Phone app start screen: scan documents with the camera or import photos and PDFs, recent cases below"></td>
+<td valign="top">
+
+📱 **Phone app (PWA):** install from the phone browser, frame the sheet live with the camera (it is found and cropped automatically), read with Mistral OCR and get the handover on the phone. Same cases as the web app. Start locally with `uvicorn pwa.server:app --port 8000`.
+
+🖥️ **Web app** for the full review, by tab:
 
 | Tab | For |
 |---|---|
-| 🩺 **ER overview** | CAVE, warnings, AI corrections, conflicts to clarify, medication, diagnoses, contact |
+| 🩺 **ER overview** | CAVE, warnings, AI corrections, conflicts, medication, diagnoses, contact |
 | 📄 **Pages** | Photos, document type per page, highlighted sources |
-| 💊 **Medication** | Review and confirm, correction log, **dose history per drug** across all documents |
+| 💊 **Medication** | Review and confirm, correction log, **dose history per drug** |
 | 🧪 **Labs & findings** | Latest values with trend |
 | 🗂️ **Documents** | Timeline, pages grouped into documents |
 | ⬇️ **Export** | Handover text, JSON, FHIR R4, CSV, patient plan PDF |
 
-📱 **Phone app (PWA):** install from the phone browser, frame the sheet live with the camera (it is found and cropped automatically), read with Mistral OCR and get the handover on the phone. Same cases as the web app. Start locally with `uvicorn pwa.server:app --port 8000`.
+</td>
+</tr>
+</table>
+
 
 ---
 
