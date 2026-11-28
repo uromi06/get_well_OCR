@@ -56,8 +56,9 @@ A patient arrives in the ER at night with a **bag of paper**: discharge letters,
 **AI where the input is messy** (reading, sorting), **fixed rules where safety needs to be explainable** (what is current, what contradicts), **the doctor decides**.
 
 ### 🚧 Work in progress: AI medication safety check
+### 🛡️ AI medication safety check
 
-Branch [`feature/med-safety-check`](https://github.com/uromi06/get_well_OCR/tree/feature/med-safety-check). With AI extraction, Mistral Large 3 also checks each page for **dangerous doses** (e.g. above the daily maximum, or not matching eGFR, potassium or INR on the same page) and **risky combinations** (e.g. two anticoagulants, anticoagulant + NSAID, "triple whammy").
+With AI extraction, Mistral Large 3 also checks each page for **dangerous doses** (e.g. above the daily maximum, or not matching eGFR, potassium or INR on the same page) and **risky combinations** (e.g. two anticoagulants, anticoagulant + NSAID, "triple whammy").
 
 - Alerts are only kept if every drug they name was extracted from that page, and are dropped when a later document stops the drug
 - Shown as a red **Medikationssicherheit** card under CAVE (web app, phone app, handover text), marked *"KI-Prüfung, ärztlich bewerten"*
