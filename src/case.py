@@ -21,6 +21,7 @@ from rapidfuzz import fuzz, process
 from . import config
 from .drugs import DRUGS
 from .extract import read_text
+from .report import safety_label
 from .parse import DOSING, ICD10, ICD10_OCR_FIX, STRENGTH, merge_rows
 from .preprocess import load_image, preprocess, to_gray
 
@@ -602,16 +603,9 @@ def merge_safety(pages: list[dict], medications: list[dict]) -> list[dict]:
             if key not in merged:
                 merged[key] = {**a, "sources": [p["page"]]}
                 continue
-            m = merged[key]
-            if p["page"] not in m["sources"]:
-                m["sources"].append(p["page"])
-            if a["severity"] == "high" and m["severity"] != "high":
-                merged[key] = {**a, "sources": m["sources"]}
-    return sorted(merged.values(), key=lambda a: (a["severity"] != "high", a["kind"] != "dose", a["sources"][0]))
-
-
-def safety_label(a: dict) -> str:
-    return f"{' + '.join(a['drugs'])}: {a['issue']}" + (f" – {a['action']}" if a.get("action") else "")
+            if p["page"] not in merged[key]["sources"]:
+                merged[key]["sources"].append(p["page"])
+    return sorted(merged.values(), key=lambda a: (a["kind"] != "combination", a["sources"][0]))
 
 
 def summary_text(s: dict) -> str:
@@ -619,9 +613,8 @@ def summary_text(s: dict) -> str:
     if s["cave"]:
         out.append("CAVE: " + "; ".join(f"{c['text']} {_src(c['sources'])}" for c in s["cave"]))
     if s.get("safety"):
-        out.append("Medikationssicherheit (KI, bitte prüfen): " + "; ".join(
-            f"{'[hoch] ' if a['severity'] == 'high' else ''}{safety_label(a)} {_src(a['sources'])}"
-            for a in s["safety"]))
+        out.append("Gefährliche Medikation (KI, bitte prüfen): " + "; ".join(
+            f"{safety_label(a)} {_src(a['sources'])}" for a in s["safety"]))
     if s["warnings"]:
         out.append("Hinweise: " + "; ".join(f"{w['text']} {_src(w['sources'])}" for w in s["warnings"]))
     if s["findings"]:

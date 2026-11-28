@@ -328,8 +328,6 @@ with tabs[0]:
     left, right = st.columns([1, 1], gap="large")
     with left:
         html_block(cave_panel([f"<b>{esc(c['text'])}</b>{sources(c['sources'])}" for c in summary["cave"]]))
-        if summary.get("safety"):
-            html_block(safety_list(summary["safety"]))
         if summary["warnings"]:
             html_block(card("Sicherheitshinweise", [f"{esc(w['text'])}{sources(w['sources'])}"
                                                     for w in summary["warnings"]], "warn"))
@@ -362,8 +360,9 @@ with tabs[0]:
     with right:
         st.markdown("#### Medikation")
         order = {"new": 0, "active": 0, "paused": 1, "stopped": 2}
-        alert_names = {d.casefold() for a in summary.get("safety", []) for d in a["drugs"]}
-        html_block(med_table(sorted(review["meds"], key=lambda r: (order.get(r["status"], 0), r["name"])), alert_names))
+        if summary.get("safety"):
+            html_block(safety_list(summary["safety"]))
+        html_block(med_table(sorted(review["meds"], key=lambda r: (order.get(r["status"], 0), r["name"]))))
         st.caption("Abgeglichen aus allen Dokumenten. Prüfen und bestätigen im Tab 💊 Medikation.")
         html_block(section("Diagnosen", [
             f"{esc(d['text'])}{' <span class=gw-muted>' + esc(d['icd10']) + '</span>' if d['icd10'] else ''}"

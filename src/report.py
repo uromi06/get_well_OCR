@@ -31,7 +31,7 @@ LABELS = {
            "cols": ["Wirkstoff", "Stärke", "Mo-Mi-Ab-Na", "Status", "Quelle"],
            "status": {"active": "", "new": "neu", "paused": "pausiert", "stopped": "abgesetzt"},
            "stopped": "Abgesetzt / pausiert:", "clarify": "Zu klären (Widersprüche zwischen Dokumenten):",
-           "warn": "Hinweise:", "safety": "Medikationssicherheit (KI-Prüfung, ärztlich bewerten):", "high": "hoch",
+           "warn": "Hinweise:", "safety": "Gefährliche Dosis/Kombination (KI-Prüfung, ärztlich bewerten):",
            "labs": "Labor (auffällige Werte, neuester Wert):", "contact": "Kontakt / Vorsorgevollmacht:",
            "unconfirmed": "ENTWURF: Medikation noch nicht ärztlich bestätigt.",
            "confirmed": "Medikation ärztlich geprüft{by}.",
@@ -45,7 +45,7 @@ LABELS = {
            "cols": ["Drug", "Strength", "Mo-No-Ev-Ni", "Status", "Source"],
            "status": {"active": "", "new": "new", "paused": "paused", "stopped": "stopped"},
            "stopped": "Stopped / paused:", "clarify": "To clarify (conflicts between documents):",
-           "warn": "Warnings:", "safety": "Medication safety (AI check, for clinical review):", "high": "high",
+           "warn": "Warnings:", "safety": "Dangerous dose/combination (AI check, for clinical review):",
            "labs": "Labs (abnormal, latest value):", "contact": "Contact / power of attorney:",
            "unconfirmed": "DRAFT: medication not yet confirmed by a doctor.",
            "confirmed": "Medication reviewed by a doctor{by}.",
@@ -65,6 +65,12 @@ TYPE_NAMES = {
            "specialist_letter": "specialist letter", "other_medical": "other medical document",
            "unknown": "document (type unclear)"},
 }
+
+
+def safety_label(a: dict) -> str:
+    """'Ibuprofen + Apixaban – Blutungsgefahr: NSAR plus orales Antikoagulans. Ibuprofen absetzen'"""
+    return (f"{' + '.join(a['drugs'])} – {a['danger']}: {a['issue']}"
+            + (f". {a['action']}" if a.get("action") else ""))
 
 
 def _date(iso: str | None, L: dict) -> str:
@@ -177,8 +183,7 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
         out += ["", L["warn"], *[f"- {_clean(w['text'])} {_src(w['sources'], L)}".rstrip() for w in s["warnings"]]]
     if s.get("safety"):
         out += ["", L["safety"], *[
-            f"- {'[' + L['high'] + '] ' if a['severity'] == 'high' else ''}{' + '.join(a['drugs'])}: {a['issue']}"
-            f"{' – ' + a['action'] if a.get('action') else ''} {_src(a['sources'], L)}".rstrip() for a in s["safety"]]]
+            f"- {safety_label(a)} {_src(a['sources'], L)}".rstrip() for a in s["safety"]]]
 
     # --- labs ------------------------------------------------------------------------------
     flagged = [l for l in s["labs"] if l["flag"]]

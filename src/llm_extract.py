@@ -15,7 +15,6 @@ STATUSES = ("active", "new", "stopped", "paused")
 CORRECTION_KINDS = ("ocr_typo", "implausible", "document_correction")
 CORRECTION_FIELDS = {"name", "strength", "dosing", "value", "unit", "icd10", "text", "fact"}
 SAFETY_KINDS = ("dose", "combination")
-SAFETY_SEVERITIES = ("high", "moderate")
 MAX_SAFETY_PER_PAGE = 5
 STRENGTH_SPACE = re.compile(r"(?<=\d)\s*(?=(?:mg|µg|μg|ug|g|ml|IE|I\.E\.|mmol)\b)", re.IGNORECASE)
 DOSE_SLOT = r"\d+(?:[,.]\d+|/\d+)?"
@@ -39,7 +38,7 @@ leere Kategorien sind [], fehlende Stärke, Dosierung, Status oder ICD sind null
  "contacts": [{"line": 9, "fact": "Tochter Anna Beispiel Tel. 0171 000000"}],
  "findings": [{"line": 7, "fact": "LVEF 35 %"}],
  "corrections": [{"line": 5, "field": "strength", "original": "25mg", "corrected": "2,5 mg", "kind": "ocr_typo", "reason": "Dezimalkomma im Dokument belegt"}],
- "safety": [{"line": 6, "kind": "combination", "drugs": ["Ibuprofen", "Apixaban"], "severity": "high", "issue": "NSAR plus Antikoagulans: erhöhtes Blutungsrisiko", "action": "Indikation für Ibuprofen prüfen, ggf. Paracetamol/Metamizol"}]
+ "safety": [{"line": 6, "kind": "combination", "drugs": ["Ibuprofen", "Apixaban"], "risk": "akut", "danger": "Blutungsgefahr", "issue": "NSAR plus orales Antikoagulans", "action": "Ibuprofen absetzen, Alternative wählen"}]
 }
 Für jedes Objekt ist line der ganzzahlige, nullbasierte Index der OCR-Quellzeile.
 
@@ -87,30 +86,41 @@ Für jedes Objekt ist line der ganzzahlige, nullbasierte Index der OCR-Quellzeil
   Hämoglobin "41,2" bei Referenz 12,0–15,5 und Flag L kann auf "11,2" hindeuten, nicht auf
   den frei geratenen Wert "8,2". Ohne direkt ableitbaren Vorschlag ist corrected "".
   reason ist immer kurz und auf Deutsch.
-- Arzneimittelsicherheit (safety): Prüfe jede extrahierte, nicht abgesetzte Medikation dieser
-  Seite mit den extrahierten (ggf. OCR-korrigierten) Werten.
-  kind=dose: Einzel- oder Tagesdosis (Stärke × Dosierschema) über der üblichen
-  Tageshöchstdosis für Erwachsene, gefährliches Einnahmeintervall (z. B. Methotrexat täglich
-  statt wöchentlich) oder eine Dosis, die zu einem auf derselben Seite angegebenen Laborwert
-  (z. B. eGFR, Kalium, INR) nicht passt. Ohne Stärke oder Dosierung keine Dosisprüfung.
-  kind=combination: klinisch relevante Interaktion oder Doppelverordnung zwischen
-  Medikamenten dieser Seite, z. B. zwei Antikoagulanzien oder Antikoagulans plus
-  Thrombozytenaggregationshemmer/NSAR, zwei Wirkstoffe derselben Klasse, ACE-Hemmer/Sartan
-  plus kaliumsparendes Diuretikum, "Triple Whammy" (ACE-Hemmer/Sartan + Diuretikum + NSAR),
-  serotonerge oder QT-verlängernde Kombinationen, Methotrexat plus Trimethoprim.
+- Arzneimittelsicherheit (safety): Melde NUR akut gefährliche Dosierungen oder Kombinationen
+  der nicht abgesetzten Medikation dieser Seite, geprüft mit den (ggf. OCR-korrigierten) Werten.
+  Akut gefährlich heißt: Wird das so eingenommen, droht in Tagen bis wenigen Wochen ernster
+  Schaden (schwere Blutung, Vergiftung/Überdosierung, lebensbedrohliche Hyperkaliämie,
+  Serotoninsyndrom, Torsade de pointes, schwere Hypoglykämie, Knochenmarkdepression).
+  kind=dose: deutlich über der zugelassenen Tageshöchstdosis (Stärke × Dosierschema),
+  gefährliches Einnahmeintervall (z. B. Methotrexat täglich statt wöchentlich) oder ein
+  Wirkstoff/eine Dosis, die bei einem auf derselben Seite angegebenen Laborwert kontraindiziert
+  ist (z. B. Metformin bei eGFR < 30, Kaliumsparer bei Kalium > 6). Ohne Stärke oder
+  Dosierung keine Dosisprüfung.
+  kind=combination: z. B. zwei Antikoagulanzien gleichzeitig, orales Antikoagulans plus NSAR,
+  Methotrexat plus Trimethoprim/Cotrimoxazol, zwei serotonerge Wirkstoffe mit MAO-Hemmer,
+  zwei stark QT-verlängernde Wirkstoffe, Kaliumsparer plus ACE-Hemmer/Sartan bei erhöhtem
+  Kalium, "Triple Whammy" (ACE-Hemmer/Sartan + Diuretikum + NSAR), derselbe Wirkstoff doppelt.
+  NICHT melden: Kombinationen oder Dosen, die nur suboptimal sind, ein Langzeitrisiko
+  bergen, "Kontrolle empfohlen" oder "Vorsicht" erfordern; übliche, gewollte
+  Standardkombinationen (ACE-Hemmer/Sartan + Diuretikum, Metformin + ACE-Hemmer, Betablocker
+  + Diuretikum, Statin + ASS); leitliniengerechte oder im Dokument begründete Dosisanpassungen
+  (z. B. reduzierte Apixaban-Dosis mit genannten Kriterien, Metformin-Reduktion bei eGFR 30–44).
+  Laborgrenzen nur melden, wenn der Wert die Grenze tatsächlich überschreitet; grenzwertige
+  Werte und im Dokument bereits abgewogene Entscheidungen ("vorerst fortgeführt") sind keine
+  akute Gefahr. Im Zweifel weglassen; die meisten Seiten haben keinen Eintrag. Wenn aber
+  mehrere akut gefährliche Probleme vorliegen, jedes einzeln melden (z. B. zwei
+  Antikoagulanzien UND Antikoagulans plus NSAR).
+  Prüfe jedes Medikament einzeln auf Dosis und Einnahmeintervall und danach alle Paare; ein
+  dose-Eintrag bleibt nötig, auch wenn derselbe Wirkstoff schon in einer combination vorkommt.
+  risk stuft jeden Eintrag ehrlich ein: "akut" (ernster Schaden in Tagen bis Wochen
+  wahrscheinlich), "grenzwertig" (Wert nahe einer Grenze, bereits abgewogen oder Kontrolle
+  genügt) oder "langfristig" (nur Langzeitrisiko oder suboptimal). Nur "akut" wird angezeigt.
   drugs enthält die INN genau wie in meds, bei combination alle beteiligten Wirkstoffe.
-  line ist die Zeile des (ersten) betroffenen Medikaments. severity=high bei potenziell
-  lebensbedrohlichem Risiko, sonst moderate. issue beschreibt das Problem, action die zu
-  prüfende Maßnahme, beides kurz und auf Deutsch.
-  issue beginnt nicht mit dem Wirkstoffnamen.
-  Nur eindeutige, klinisch relevante Probleme melden, keine theoretischen oder geringfügigen
-  Interaktionen, höchstens 5 pro Seite; im Zweifel weglassen. Keine Einträge für korrekte,
-  leitliniengerechte oder im Dokument bereits begründete Dosisanpassungen (z. B. reduzierte
-  Apixaban-Dosis mit genannten Kriterien) und keine üblichen, gewollten Standardkombinationen
-  (z. B. ACE-Hemmer/Sartan + Schleifen- oder Thiaziddiuretikum, Metformin + ACE-Hemmer,
-  Betablocker + Diuretikum, Statin + Thrombozytenaggregationshemmer), solange nicht ein
-  zusätzlicher Faktor auf der Seite sie gefährlich macht. Ein vermuteter OCR-Fehler gehört
-  in corrections, nicht in safety; geprüft wird immer der korrigierte Wert."""
+  line ist die Zeile des (ersten) betroffenen Medikaments. danger nennt in wenigen Worten den
+  akut drohenden Schaden (z. B. "Blutungsgefahr"), issue den Grund ohne Wirkstoffnamen am
+  Anfang (max. ca. 80 Zeichen), action die sofort zu prüfende Maßnahme, alles auf Deutsch.
+  Ein vermuteter OCR-Fehler gehört in corrections, nicht in safety; geprüft wird immer der
+  korrigierte Wert."""
 
 
 def _parse(raw: str) -> dict:
@@ -207,9 +217,10 @@ def _safety_alerts(items: list[dict], meds: list[dict], lines: list[dict], sourc
     for item in items:
         try:
             kind = _text(item, "kind", required=True)
-            severity = _text(item, "severity").lower() or "moderate"
+            if _text(item, "risk").casefold() != "akut":   # hard gate: only acute dangers reach the doctor
+                continue
             names = item.get("drugs")
-            if (kind not in SAFETY_KINDS or severity not in SAFETY_SEVERITIES or not isinstance(names, list)
+            if (kind not in SAFETY_KINDS or not isinstance(names, list)
                     or not names or any(not isinstance(n, str) or not n.strip() for n in names)):
                 raise mistral.MistralError("invalid safety alert")
             resolved = []
@@ -226,7 +237,7 @@ def _safety_alerts(items: list[dict], meds: list[dict], lines: list[dict], sourc
                 continue
             seen.add(key)
             idx = _line_index(item.get("line"), lines, *resolved)
-            alerts.append({"kind": kind, "drugs": resolved, "severity": severity,
+            alerts.append({"kind": kind, "drugs": resolved, "danger": _text(item, "danger", required=True),
                            "issue": _text(item, "issue", required=True), "action": _text(item, "action"),
                            "line": idx, **source(idx)})
         except mistral.MistralError:
