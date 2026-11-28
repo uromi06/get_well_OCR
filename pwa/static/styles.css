@@ -358,3 +358,31 @@ td.H { color: var(--cave); font-weight: 600; } td.L { color: var(--primary); fon
 @media (min-width: 900px) {
   .grid2 { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
 }
+
+/* ---------- Medikation detail page: dose history per medication */
+.info-free.filled { min-height: 0; border: 0; border-radius: 0; display: flex; flex-direction: column; gap: 12px; }
+.dose-card { gap: 0; }
+.dose-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.dose-item { border-bottom: 1px solid var(--divider); }
+.dose-item:last-child { border-bottom: 0; }
+.dose-line { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.dose-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dose-name { font-size: 15px; font-weight: 500; }
+.dose-sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.dose-card.off .dose-name { color: var(--ink-2); text-decoration: line-through; }
+.dose-toggle { width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--primary);
+               background: var(--card); color: var(--primary); font-size: 18px; font-weight: 600; line-height: 1; padding: 0;
+               display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.dose-toggle[aria-expanded="true"] { background: var(--primary); color: #fff; }
+.dose-panel { padding: 0 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.dose-now { font-size: 15px; }
+.timeline { list-style: none; margin: 4px 0 0 6px; padding: 0 0 0 16px; border-left: 2px solid var(--line-2); display: flex; flex-direction: column; gap: 14px; }
+.timeline li { position: relative; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.timeline li::before { content: ""; position: absolute; left: -24px; top: 2px; width: 14px; height: 14px; border-radius: 50%;
+                       box-sizing: border-box; background: var(--primary-light); border: 2px solid var(--card); }
+.timeline li.warn::before { background: var(--warn); }
+.timeline li.ok::before { background: var(--ok); }
+.timeline .when { font-size: 12px; color: var(--ink-2); }
+.timeline .what { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.timeline .quote { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.timeline .quote summary { cursor: pointer; color: var(--primary); font-weight: 600; }
