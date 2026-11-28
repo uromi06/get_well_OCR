@@ -88,6 +88,15 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; 
         flex-direction: column; gap: 10px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .card-head h2 { font-size: 15px; font-weight: 600; }
+.card-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card-sub { font-size: 13px; font-weight: 500; }
+.card-sub.warn { color: var(--warn); }
+.card-sub.ok { color: var(--ok); }
+.card-actions { display: flex; gap: 2px; margin: -6px -8px -6px 0; flex-shrink: 0; }
+.card-actions .icon-btn { color: var(--primary); }
+.card-actions .icon-btn:hover { background: var(--primary-soft); }
+.card-actions .icon-btn.done { color: var(--ok); }
+.view-title { padding: 0 20px 12px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .06em; }
 .card-text { font-size: 15px; line-height: 1.6; white-space: pre-line; }
 .rows { display: flex; flex-direction: column; }
 .rows > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--divider); font-size: 15px; }

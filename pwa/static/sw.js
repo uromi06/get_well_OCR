@@ -2,7 +2,7 @@
  * API calls and page images are never cached: patient data stays on the server only.
  * Bump VERSION when the shell changes, so phones pick up the new files.
  */
-const VERSION = "gwo-pwa-v11";
+const VERSION = "gwo-pwa-v13";
 // OpenCV.js (~10 MB) gets its own cache: loaded on the first scan, kept across app updates
 const VENDOR = "gwo-vendor-opencv-4.10.0";
 const SHELL = ["/", "/index.html", "/app.js", "/styles.css", "/manifest.webmanifest",

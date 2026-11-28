@@ -35,6 +35,9 @@ const ICON = {
   info: `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>`,
   server: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>`,
   copy: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
+  copyLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
+  edit: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17H5v-3z"/></svg>`,
+  checkLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>`,
   mail: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`,
 };
 
@@ -766,6 +769,8 @@ function viewScan() {
   document.getElementById("shots").onclick = (e) => { const b = e.target.closest(".shot"); if (b) openPage(+b.dataset.i); };
 
   // ---------- "Weiter": check the pages in a sheet, then send them off
+  // Engine switch is shown as before, but the server always reads with Mistral (pwa/server.py)
+  const engines = S.meta.engines;
   const openReview = () => {
     const n = sc.shots.length;
     layer.innerHTML = `
@@ -779,6 +784,7 @@ function viewScan() {
           <div class="review-row">
             <span class="badge">${ICON.server}</span>
             <span class="main"><span class="name" id="engname">${esc(engineLabel(sc.engine))}</span><span class="sub">Texterkennung</span></span>
+            ${engines.length > 1 ? `<button class="text-btn" data-act="engine">Ändern</button>` : ""}
           </div>
           <div class="review-actions">
             <button class="cta flat" data-act="go">Auswerten</button>
@@ -793,6 +799,10 @@ function viewScan() {
       if (page) return openPage(+page.dataset.page);
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "edit") layer.innerHTML = "";
+      if (act === "engine") {
+        sc.engine = engines[(engines.findIndex((x) => x.id === sc.engine) + 1) % engines.length].id;
+        document.getElementById("engname").textContent = engineLabel(sc.engine);
+      }
       if (act === "go") {
         const files = sc.shots.map((s) => s.file), engine = sc.engine;
         discard();
@@ -1025,12 +1035,15 @@ async function loadCase(id) {
 
 function caseMenu(d) {
   sheet("Verarbeitung", `
+    <label class="field">Texterkennung<select id="engine">${S.meta.engines.map((e) =>
+      `<option value="${e.id}" ${e.id === ((d.result && d.result.engine) || S.meta.default_engine) ? "selected" : ""}>${esc(e.label)}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" id="fresh"> Texterkennung neu ausführen (sonst gespeicherte Ergebnisse)</label>
     <button class="btn primary" id="reprocess">Fall erneut verarbeiten</button>
+    ${d.score ? `<a class="btn" href="#/case/${enc(d.case.id)}?tab=eval" data-close>Auswertung (Testfall)</a>` : ""}
     ${d.case.private ? `<button class="btn danger" id="delcase">Fall und alle Daten löschen</button>` : ""}`, (el, close) => {
     el.querySelector("#reprocess").onclick = async () => {
       try {
-        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: "mistral", fresh: el.querySelector("#fresh").checked } });
+        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: el.querySelector("#engine").value, fresh: el.querySelector("#fresh").checked } });
         close(); go(`#/analyse/${enc(d.case.id)}`);
       } catch (e) { toast(e.message, true); }
     };
@@ -1048,7 +1061,8 @@ async function viewCase(id, tab) {
   const d = await loadCase(id);
   if (d.job && d.job.state === "running") return location.replace(`#/analyse/${enc(id)}`);
   const r = d.result;
-  const nav = `<div class="nav"><a class="icon-btn" href="#/" aria-label="Zurück zur Übersicht">${ICON.back}</a><span class="label"></span>
+  const sub = tab && tab !== "result";                 // a detail view, opened from a card's ✎ or a link
+  const nav = `<div class="nav"><a class="icon-btn" href="${sub && d.result ? `#/case/${enc(id)}` : "#/"}" aria-label="${sub && d.result ? "Zurück zum Ergebnis" : "Zurück zur Übersicht"}">${ICON.back}</a><span class="label"></span>
       ${r ? `<a class="btn" href="#/case/${enc(id)}?tab=pages">${ICON.docSmall}Original</a>` : ""}
       <button class="icon-btn" id="menu" aria-label="Verarbeitung und Löschen">${ICON.more}</button></div>`;
   if (!r) {
@@ -1062,7 +1076,6 @@ async function viewCase(id, tab) {
   const firstDoc = r.documents.find((x) => !["irrelevant", "unknown"].includes(x.type));
   const meta = [p.birth ? `geb. ${p.birth}${age(p.birth) ? ` (${age(p.birth)})` : ""}` : null, firstDoc && firstDoc.issuer,
     `${r.pages.length} Seiten, ${r.documents.length} Dokumente`].filter(Boolean).join(" · ");
-  const unconfirmed = d.review.meds.filter((m) => !m.confirmed).length;
   const retake = r.pages.filter((x) => x.status === "retake");
   const tabs = TABS.filter(([k]) => k !== "eval" || d.score);
   if (!tabs.some(([k]) => k === tab)) tab = "result";
@@ -1071,7 +1084,7 @@ async function viewCase(id, tab) {
     <div class="screen ${wide ? "wide" : ""}">
       ${nav}
       <div class="patient-head"><h1>${esc(p.name || d.case.label)}</h1><span class="meta">${esc(meta)}</span></div>
-      <nav class="tabs" aria-label="Bereiche">${tabs.map(([k, l]) => `<a href="#/case/${enc(id)}?tab=${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${l}${k === "review" && unconfirmed ? ` <span class="count">${unconfirmed}</span>` : ""}</a>`).join("")}</nav>
+      ${tab !== "result" ? `<div class="view-title">${esc(tabs.find(([k]) => k === tab)[1])}</div>` : ""}
       ${retake.length ? `<div style="padding:0 20px 12px"><div class="note cave">${ICON.info}<span><b>Bitte neu fotografieren:</b> ${retake.map((x) => `Seite ${x.page} (${x.quality === "too_blurry" ? "zu unscharf" : "Text unlesbar"})`).join(", ")}</span></div></div>` : ""}
       <div id="tab"></div>
     </div>`;
@@ -1089,34 +1102,39 @@ function tabResult(el, d) {
   const flagged = s.labs.filter((l) => l.flag);
   const medLine = (m) => [m.name, m.strength].filter(Boolean).join(" ");
   const blocks = [];
-  if (s.cave.length) blocks.push({ key: "cave", title: "CAVE", cave: true,
+  if (s.cave.length) blocks.push({ key: "cave", title: "CAVE", cave: true, edit: "review",
     html: `<div class="card-text">${s.cave.map((c) => `${esc(c.text)}${sources(c.sources)}`).join("\n")}</div>`,
     text: "CAVE:\n" + s.cave.map((c) => c.text).join("\n") });
-  blocks.push({ key: "diag", title: "Diagnosen",
+  blocks.push({ key: "diag", title: "Diagnosen", edit: "docs",
     html: s.diagnoses.length ? `<div class="card-text">${s.diagnoses.slice(0, 12).map((x) => `${esc(x.text)}${x.icd10 ? ` (${esc(x.icd10)})` : ""}${sources(x.sources)}`).join("\n")}</div>` : `<div class="muted">Keine Diagnosen erkannt.</div>`,
     text: "Diagnosen:\n" + s.diagnoses.slice(0, 12).map((x) => x.text + (x.icd10 ? ` (${x.icd10})` : "")).join("\n") });
-  blocks.push({ key: "med", title: "Medikation", badge: rv.meds.length && !d.ready ? `<span class="flag">${rv.meds.filter((m) => !m.confirmed).length} nicht bestätigt</span>` : "",
+  const nOk = rv.meds.filter((m) => m.confirmed).length;
+  blocks.push({ key: "med", title: "Medikation", edit: "review",
+    sub: rv.meds.length ? `<span class="card-sub ${nOk === rv.meds.length ? "ok" : "warn"}">${nOk} von ${rv.meds.length} geprüft</span>` : "",
     html: meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
       ${stopped.length ? `<div class="muted">Abgesetzt: ${esc(stopped.map(medLine).join(", "))}</div>` : ""}` : `<div class="muted">Keine Medikamente erkannt.</div>`,
     text: "Medikation:\n" + meds.map((m) => `${medLine(m)} ${m.dosing || ""}`.trim()).join("\n") + (stopped.length ? `\nAbgesetzt: ${stopped.map(medLine).join(", ")}` : "") });
-  if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte",
+  if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte", edit: "labs",
     html: `<div class="rows">${flagged.map((l) => `<div><span>${esc(l.name)}</span><span class="right">${esc(l.value)} ${esc(l.unit)} ${l.flag === "H" ? "▲" : l.flag === "L" ? "▼" : ""}</span></div>`).join("")}</div>`,
     text: "Laborwerte:\n" + flagged.map((l) => `${l.name} ${l.value} ${l.unit}${l.flag ? ` (${l.flag === "H" ? "hoch" : "niedrig"})` : ""}`).join("\n") });
-  if ((s.findings || []).length) blocks.push({ key: "bef", title: "Befunde",
+  if ((s.findings || []).length) blocks.push({ key: "bef", title: "Befunde", edit: "docs",
     html: `<div class="card-text">${s.findings.map((f) => `${esc(f.text)}${sources(f.sources)}`).join("\n")}</div>`,
     text: "Befunde:\n" + s.findings.map((f) => f.text).join("\n") });
-  if (s.contacts.length) blocks.push({ key: "kontakt", title: "Kontakt / Vorsorgevollmacht",
+  if (s.contacts.length) blocks.push({ key: "kontakt", title: "Kontakt / Vorsorgevollmacht", edit: "docs",
     html: `<div class="card-text">${s.contacts.map((c) => `${esc(c.text)}${sources(c.sources)}`).join("\n")}</div>`,
     text: "Kontakt:\n" + s.contacts.map((c) => c.text).join("\n") });
 
   el.innerHTML = `
     <div class="body" style="padding-top:0">
       ${(s.extract_errors || []).length ? `<div class="note warn">${ICON.info}<span>KI-Auswertung fehlgeschlagen für Seite ${esc(s.extract_errors.map((e) => e.page).join(", "))}: dort nur regelbasiert ausgewertet.</span></div>` : ""}
-      <div class="note warn">${ICON.info}<span>Automatischer Auszug aus den Unterlagen. Bitte vor Übernahme in die Akte prüfen${d.ready ? "" : " und die Medikation im Tab „Prüfen“ bestätigen"}.</span></div>
+      <div class="note warn">${ICON.info}<span>Automatischer Auszug aus den Unterlagen. Bitte vor Übernahme in die Akte prüfen${d.ready ? "" : " und die Medikation über den Stift bestätigen"}.</span></div>
       ${s.conflicts.length > d.review.conflicts_ok.length ? `<a class="note info" href="#/case/${enc(id)}?tab=review">${ICON.info}<span>${(() => { const n = s.conflicts.length - d.review.conflicts_ok.length; return `${n} ${n === 1 ? "Widerspruch" : "Widersprüche"}`; })()} zwischen den Dokumenten offen · zum Prüfen</span></a>` : ""}
       ${blocks.map((b) => `<section class="card" ${b.cave ? 'style="border-color:#F0C4CB"' : ""}>
-          <div class="card-head"><h2 ${b.cave ? 'style="color:#A3162B"' : ""}>${esc(b.title)}</h2>${b.badge || ""}<span style="flex:1"></span>
-            <button class="chip-btn" data-copy="${b.key}" aria-label="${esc(b.title)} kopieren">Kopieren</button></div>
+          <div class="card-head"><div class="card-title"><h2 ${b.cave ? 'style="color:#A3162B"' : ""}>${esc(b.title)}</h2>${b.sub || ""}</div>
+            <div class="card-actions">
+              <button class="icon-btn" data-copy="${b.key}" aria-label="${esc(b.title)} kopieren" title="Kopieren">${ICON.copyLine}</button>
+              <a class="icon-btn" href="#/case/${enc(id)}?tab=${b.edit}" aria-label="${esc(b.title)} bearbeiten" title="Bearbeiten">${ICON.edit}</a>
+            </div></div>
           ${b.html}</section>`).join("")}
     </div>
     <div class="foot">
@@ -1128,7 +1146,7 @@ function tabResult(el, d) {
     </div>`;
   el.querySelectorAll("[data-copy]").forEach((btn) => {
     const b = blocks.find((x) => x.key === btn.dataset.copy);
-    btn.onclick = () => copyText(b.text, btn);
+    btn.onclick = () => copyText(b.text, btn, "", ICON.checkLine);
   });
   // Load the handover text right away: browsers (iOS Safari above all) only allow copying
   // directly inside the tap, not after waiting for the server.
