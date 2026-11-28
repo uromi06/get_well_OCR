@@ -25,6 +25,7 @@ import api as ocr_api
 from src import config, mistral, store
 from src.case import CONFIDENCE_MIN, SHARPNESS_MIN
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
+from src.med_history import dose_history, page_numbers
 from src.report import er_report
 from views.components import DOC_TYPE_COLORS, DOC_TYPE_LABELS, FACT_COLORS_BGR, FACT_LABELS, STATUS_LABELS
 
@@ -242,6 +243,28 @@ class ReviewIn(BaseModel):
     meds: list[dict]
     conflicts_ok: list[int] = []
     reviewer: str = ""
+
+
+@app.get("/api/cases/{case_id}/dose-history")
+def get_dose_history(case_id: str, name: str, pages: str = "", all: bool = False,
+                     _: str = Depends(auth.require_user)) -> dict:
+    """What each source page says about one drug, oldest document first (undated last), with each
+    dose change marked. Same logic as "Dosisverlauf je Wirkstoff" in the Streamlit app (src/med_history.py).
+    pages: the drug's "Quelle (Seiten)", e.g. "3, 4, 19". all: include mentions without a dose."""
+    _case_or_404(case_id)
+    rows = dose_history(_result_or_409(case_id), name, page_numbers(pages) or None)
+    if not all:
+        rows = [r for r in rows if r["change"] != "nur erwähnt"]
+    de = lambda d: datetime.strptime(d, "%Y-%m-%d").strftime("%d.%m.%Y") if d else None
+    return {
+        "name": name,
+        "pages": len({r["page"] for r in rows}),
+        "changed": sum(1 for r in rows if r["change"].startswith(("↑", "↓", "geändert"))),
+        "rows": [{"page": r["page"], "document": r["document"], "date": de(r["date"]),
+                  "strength": r["strength"], "dosing": r["dosing"], "daily": r["daily_text"],
+                  "status": STATUS_LABELS.get(r["status"] or "", "") if r["status"] else "",
+                  "change": r["change"], "source_text": r["source_text"]} for r in rows],
+    }
 
 
 @app.put("/api/cases/{case_id}/review")
