@@ -1241,6 +1241,7 @@ async function viewInfo(id, key) {
     const n = d.review.meds.length, ok = d.review.meds.filter((m) => m.confirmed).length;
     $app.innerHTML = `<div class="screen">${head(`${n} ${n === 1 ? "Eintrag" : "Einträge"} · ${ok} geprüft`)}
       <div class="body" style="padding-top:0"><div class="info-free" id="med-details"></div></div></div>`;
+    medDetails(document.getElementById("med-details"), d);
     return;
   }
 
@@ -1287,6 +1288,68 @@ async function viewInfo(id, key) {
         }).join("") || `<div class="empty">Keine Einträge.</div>`}
         <div style="height:28px"></div>
       </div></div>`;
+}
+
+// ---------- Medikation detail page: every medication, "+" opens its dose history
+
+function medDetails(el, d) {
+  const id = d.case.id;
+  const meds = d.review.meds.filter((m) => (m.name || "").trim());
+  const current = meds.filter((m) => m.status !== "stopped"), stopped = meds.filter((m) => m.status === "stopped");
+  const changeClass = (c) => (/^(↑|↓|geändert|abgesetzt|pausiert)/.test(c) ? "warn" : /unverändert/.test(c) ? "ok" : "");
+  const row = (m) => {
+    const i = d.review.meds.indexOf(m);
+    const pill = m.status === "new" ? '<span class="pill">neu</span>' : m.status === "paused" ? '<span class="pill warn">pausiert</span>' : "";
+    return `<div class="dose-item">
+      <div class="dose-line">
+        <div class="dose-main">
+          <div class="dose-name">${esc([m.name, m.strength].filter(Boolean).join(" "))} ${pill}${m.confirmed ? ' <span class="pill ok">geprüft</span>' : ""}</div>
+          <div class="dose-sub">${esc(m.dosing || "keine Dosierung")}${m.sources ? ` · S. ${esc(m.sources)}` : ""}</div>
+        </div>
+        <button class="dose-toggle" data-dose="${i}" aria-expanded="false" aria-controls="dose-${i}" aria-label="Dosisverlauf von ${esc(m.name)} anzeigen">+</button>
+      </div>
+      <div class="dose-panel" id="dose-${i}" hidden></div>
+    </div>`;
+  };
+  // newest first; notes without a document date at the bottom
+  const ordered = (rows) => [...rows.filter((r) => r.date).reverse(), ...rows.filter((r) => !r.date)];
+  const panel = (m, h) => {
+    const now = [m.strength, m.dosing].filter(Boolean).join(" ") || "–";
+    const top = `<div class="dose-now"><span class="muted">Aktuell</span> <b>${esc(now)}</b>${m.status !== "active" ? ` · ${esc(statusLabel(m.status))}` : ""}</div>`;
+    if (!h.rows.length) return top + `<div class="muted">Auf den Quellseiten ist keine Dosisangabe zu „${esc(m.name)}“ gelesen worden.</div>`;
+    return top + `<div class="muted">${h.changed ? `<b>Dosis ${h.changed}× geändert</b>` : "Dosis unverändert"} · ${h.rows.length} ${h.rows.length === 1 ? "Angabe" : "Angaben"} auf ${h.pages} ${h.pages === 1 ? "Seite" : "Seiten"}${h.rows.length > 1 ? " · neueste zuerst" : ""}</div>
+      <ol class="timeline">${ordered(h.rows).map((r) => `<li class="${changeClass(r.change)}">
+        <div class="when">${esc(r.date || "ohne Datum")} · S. ${r.page} · ${esc(r.document)}</div>
+        <div class="what">${esc([r.strength, r.dosing].filter(Boolean).join(" · ") || r.status || "–")}${r.daily ? ` <span class="muted">= ${esc(r.daily)}</span>` : ""}</div>
+        <span class="pill ${changeClass(r.change)}">${esc(r.change)}</span>
+        ${r.source_text ? `<details class="quote"><summary>Textstelle</summary>„${esc(r.source_text)}“</details>` : ""}
+        <a class="info-link" href="#/case/${enc(id)}/page/${r.page}">${ICON.docSmall}Seite ${r.page} im Original</a>
+      </li>`).join("")}</ol>`;
+  };
+  el.classList.add("filled");          // the placeholder frame goes once there is content
+  el.innerHTML = meds.length ? `
+      <section class="card dose-card"><h2>Aktuelle Medikation</h2>${current.map(row).join("") || `<div class="muted">Keine.</div>`}</section>
+      ${stopped.length ? `<section class="card dose-card off"><h2>Abgesetzt</h2>${stopped.map(row).join("")}</section>` : ""}
+      <p class="muted" style="margin:0">„+“ zeigt, wie sich die Dosis über die Dokumente verändert hat. Nur Ansicht: geändert wird über den Stift oben.</p>
+      <div style="height:28px"></div>` : `<div class="empty">Keine Medikamente erkannt.</div>`;
+  const cache = {};
+  el.querySelectorAll("[data-dose]").forEach((btn) => {
+    btn.onclick = async () => {
+      const i = +btn.dataset.dose, m = d.review.meds[i], box = document.getElementById(`dose-${i}`);
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open));
+      btn.textContent = open ? "−" : "+";
+      btn.setAttribute("aria-label", `Dosisverlauf von ${m.name} ${open ? "ausblenden" : "anzeigen"}`);
+      box.hidden = !open;
+      if (!open) return;
+      if (cache[i]) { box.innerHTML = panel(m, cache[i]); return; }
+      box.innerHTML = `<div class="muted">Wird geladen …</div>`;
+      try {
+        cache[i] = await api(`/api/cases/${enc(id)}/dose-history?name=${enc(m.name)}&pages=${enc(m.sources || "")}`);
+        box.innerHTML = panel(m, cache[i]);
+      } catch (e) { box.innerHTML = `<div class="note warn">${ICON.info}<span>${esc(e.message)}</span></div>`; }
+    };
+  });
 }
 
 // ---------- tab: Prüfen (Widersprüche + Medikation)
