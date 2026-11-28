@@ -35,6 +35,10 @@ const ICON = {
   info: `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>`,
   server: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>`,
   copy: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
+  copyLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
+  edit: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17H5v-3z"/></svg>`,
+  checkLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>`,
+  infoLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>`,
   mail: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`,
 };
 
@@ -173,6 +177,7 @@ async function route() {
     if (hash === "#/scan") return viewScan();
     if ((m = /^#\/analyse\/([^/?]+)$/.exec(hash))) return viewAnalyse(decodeURIComponent(m[1]));
     if ((m = /^#\/case\/([^/?]+)\/page\/(\d+)$/.exec(hash))) return viewPage(decodeURIComponent(m[1]), +m[2]);
+    if ((m = /^#\/case\/([^/?]+)\/info\/(\w+)$/.exec(hash))) return viewInfo(decodeURIComponent(m[1]), m[2]);
     if ((m = /^#\/case\/([^/?]+)(?:\?tab=(\w+))?$/.exec(hash))) return viewCase(decodeURIComponent(m[1]), m[2] || "result");
     go("#/");
   } catch (e) {
@@ -766,6 +771,8 @@ function viewScan() {
   document.getElementById("shots").onclick = (e) => { const b = e.target.closest(".shot"); if (b) openPage(+b.dataset.i); };
 
   // ---------- "Weiter": check the pages in a sheet, then send them off
+  // Engine switch is shown as before, but the server always reads with Mistral (pwa/server.py)
+  const engines = S.meta.engines;
   const openReview = () => {
     const n = sc.shots.length;
     layer.innerHTML = `
@@ -779,6 +786,7 @@ function viewScan() {
           <div class="review-row">
             <span class="badge">${ICON.server}</span>
             <span class="main"><span class="name" id="engname">${esc(engineLabel(sc.engine))}</span><span class="sub">Texterkennung</span></span>
+            ${engines.length > 1 ? `<button class="text-btn" data-act="engine">Ändern</button>` : ""}
           </div>
           <div class="review-actions">
             <button class="cta flat" data-act="go">Auswerten</button>
@@ -793,6 +801,10 @@ function viewScan() {
       if (page) return openPage(+page.dataset.page);
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "edit") layer.innerHTML = "";
+      if (act === "engine") {
+        sc.engine = engines[(engines.findIndex((x) => x.id === sc.engine) + 1) % engines.length].id;
+        document.getElementById("engname").textContent = engineLabel(sc.engine);
+      }
       if (act === "go") {
         const files = sc.shots.map((s) => s.file), engine = sc.engine;
         discard();
@@ -1025,12 +1037,15 @@ async function loadCase(id) {
 
 function caseMenu(d) {
   sheet("Verarbeitung", `
+    <label class="field">Texterkennung<select id="engine">${S.meta.engines.map((e) =>
+      `<option value="${e.id}" ${e.id === ((d.result && d.result.engine) || S.meta.default_engine) ? "selected" : ""}>${esc(e.label)}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" id="fresh"> Texterkennung neu ausführen (sonst gespeicherte Ergebnisse)</label>
     <button class="btn primary" id="reprocess">Fall erneut verarbeiten</button>
+    ${d.score ? `<a class="btn" href="#/case/${enc(d.case.id)}?tab=eval" data-close>Auswertung (Testfall)</a>` : ""}
     ${d.case.private ? `<button class="btn danger" id="delcase">Fall und alle Daten löschen</button>` : ""}`, (el, close) => {
     el.querySelector("#reprocess").onclick = async () => {
       try {
-        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: "mistral", fresh: el.querySelector("#fresh").checked } });
+        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: el.querySelector("#engine").value, fresh: el.querySelector("#fresh").checked } });
         close(); go(`#/analyse/${enc(d.case.id)}`);
       } catch (e) { toast(e.message, true); }
     };
@@ -1048,7 +1063,8 @@ async function viewCase(id, tab) {
   const d = await loadCase(id);
   if (d.job && d.job.state === "running") return location.replace(`#/analyse/${enc(id)}`);
   const r = d.result;
-  const nav = `<div class="nav"><a class="icon-btn" href="#/" aria-label="Zurück zur Übersicht">${ICON.back}</a><span class="label"></span>
+  const sub = tab && tab !== "result";                 // a detail view, opened from a card's ✎ or a link
+  const nav = `<div class="nav"><a class="icon-btn" href="${sub && d.result ? `#/case/${enc(id)}` : "#/"}" aria-label="${sub && d.result ? "Zurück zum Ergebnis" : "Zurück zur Übersicht"}">${ICON.back}</a><span class="label"></span>
       ${r ? `<a class="btn" href="#/case/${enc(id)}?tab=pages">${ICON.docSmall}Original</a>` : ""}
       <button class="icon-btn" id="menu" aria-label="Verarbeitung und Löschen">${ICON.more}</button></div>`;
   if (!r) {
@@ -1062,7 +1078,6 @@ async function viewCase(id, tab) {
   const firstDoc = r.documents.find((x) => !["irrelevant", "unknown"].includes(x.type));
   const meta = [p.birth ? `geb. ${p.birth}${age(p.birth) ? ` (${age(p.birth)})` : ""}` : null, firstDoc && firstDoc.issuer,
     `${r.pages.length} Seiten, ${r.documents.length} Dokumente`].filter(Boolean).join(" · ");
-  const unconfirmed = d.review.meds.filter((m) => !m.confirmed).length;
   const retake = r.pages.filter((x) => x.status === "retake");
   const tabs = TABS.filter(([k]) => k !== "eval" || d.score);
   if (!tabs.some(([k]) => k === tab)) tab = "result";
@@ -1071,7 +1086,7 @@ async function viewCase(id, tab) {
     <div class="screen ${wide ? "wide" : ""}">
       ${nav}
       <div class="patient-head"><h1>${esc(p.name || d.case.label)}</h1><span class="meta">${esc(meta)}</span></div>
-      <nav class="tabs" aria-label="Bereiche">${tabs.map(([k, l]) => `<a href="#/case/${enc(id)}?tab=${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${l}${k === "review" && unconfirmed ? ` <span class="count">${unconfirmed}</span>` : ""}</a>`).join("")}</nav>
+      ${tab !== "result" ? `<div class="view-title">${esc(tabs.find(([k]) => k === tab)[1])}</div>` : ""}
       ${retake.length ? `<div style="padding:0 20px 12px"><div class="note cave">${ICON.info}<span><b>Bitte neu fotografieren:</b> ${retake.map((x) => `Seite ${x.page} (${x.quality === "too_blurry" ? "zu unscharf" : "Text unlesbar"})`).join(", ")}</span></div></div>` : ""}
       <div id="tab"></div>
     </div>`;
@@ -1089,34 +1104,40 @@ function tabResult(el, d) {
   const flagged = s.labs.filter((l) => l.flag);
   const medLine = (m) => [m.name, m.strength].filter(Boolean).join(" ");
   const blocks = [];
-  if (s.cave.length) blocks.push({ key: "cave", title: "CAVE", cave: true,
+  if (s.cave.length) blocks.push({ key: "cave", title: "CAVE", cave: true, edit: "review",
     html: `<div class="card-text">${s.cave.map((c) => `${esc(c.text)}${sources(c.sources)}`).join("\n")}</div>`,
     text: "CAVE:\n" + s.cave.map((c) => c.text).join("\n") });
-  blocks.push({ key: "diag", title: "Diagnosen",
+  blocks.push({ key: "diag", title: "Diagnosen", edit: "docs",
     html: s.diagnoses.length ? `<div class="card-text">${s.diagnoses.slice(0, 12).map((x) => `${esc(x.text)}${x.icd10 ? ` (${esc(x.icd10)})` : ""}${sources(x.sources)}`).join("\n")}</div>` : `<div class="muted">Keine Diagnosen erkannt.</div>`,
     text: "Diagnosen:\n" + s.diagnoses.slice(0, 12).map((x) => x.text + (x.icd10 ? ` (${x.icd10})` : "")).join("\n") });
-  blocks.push({ key: "med", title: "Medikation", badge: rv.meds.length && !d.ready ? `<span class="flag">${rv.meds.filter((m) => !m.confirmed).length} nicht bestätigt</span>` : "",
+  const nOk = rv.meds.filter((m) => m.confirmed).length;
+  blocks.push({ key: "med", title: "Medikation", edit: "review",
+    sub: rv.meds.length ? `<span class="card-sub ${nOk === rv.meds.length ? "ok" : "warn"}">${nOk} von ${rv.meds.length} geprüft</span>` : "",
     html: meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
       ${stopped.length ? `<div class="muted">Abgesetzt: ${esc(stopped.map(medLine).join(", "))}</div>` : ""}` : `<div class="muted">Keine Medikamente erkannt.</div>`,
     text: "Medikation:\n" + meds.map((m) => `${medLine(m)} ${m.dosing || ""}`.trim()).join("\n") + (stopped.length ? `\nAbgesetzt: ${stopped.map(medLine).join(", ")}` : "") });
-  if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte",
+  if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte", edit: "labs",
     html: `<div class="rows">${flagged.map((l) => `<div><span>${esc(l.name)}</span><span class="right">${esc(l.value)} ${esc(l.unit)} ${l.flag === "H" ? "▲" : l.flag === "L" ? "▼" : ""}</span></div>`).join("")}</div>`,
     text: "Laborwerte:\n" + flagged.map((l) => `${l.name} ${l.value} ${l.unit}${l.flag ? ` (${l.flag === "H" ? "hoch" : "niedrig"})` : ""}`).join("\n") });
-  if ((s.findings || []).length) blocks.push({ key: "bef", title: "Befunde",
+  if ((s.findings || []).length) blocks.push({ key: "bef", title: "Befunde", edit: "docs",
     html: `<div class="card-text">${s.findings.map((f) => `${esc(f.text)}${sources(f.sources)}`).join("\n")}</div>`,
     text: "Befunde:\n" + s.findings.map((f) => f.text).join("\n") });
-  if (s.contacts.length) blocks.push({ key: "kontakt", title: "Kontakt / Vorsorgevollmacht",
+  if (s.contacts.length) blocks.push({ key: "kontakt", title: "Kontakt / Vorsorgevollmacht", edit: "docs",
     html: `<div class="card-text">${s.contacts.map((c) => `${esc(c.text)}${sources(c.sources)}`).join("\n")}</div>`,
     text: "Kontakt:\n" + s.contacts.map((c) => c.text).join("\n") });
 
   el.innerHTML = `
     <div class="body" style="padding-top:0">
       ${(s.extract_errors || []).length ? `<div class="note warn">${ICON.info}<span>KI-Auswertung fehlgeschlagen für Seite ${esc(s.extract_errors.map((e) => e.page).join(", "))}: dort nur regelbasiert ausgewertet.</span></div>` : ""}
-      <div class="note warn">${ICON.info}<span>Automatischer Auszug aus den Unterlagen. Bitte vor Übernahme in die Akte prüfen${d.ready ? "" : " und die Medikation im Tab „Prüfen“ bestätigen"}.</span></div>
+      <div class="note warn">${ICON.info}<span>Automatischer Auszug aus den Unterlagen. Bitte vor Übernahme in die Akte prüfen${d.ready ? "" : " und die Medikation über den Stift bestätigen"}.</span></div>
       ${s.conflicts.length > d.review.conflicts_ok.length ? `<a class="note info" href="#/case/${enc(id)}?tab=review">${ICON.info}<span>${(() => { const n = s.conflicts.length - d.review.conflicts_ok.length; return `${n} ${n === 1 ? "Widerspruch" : "Widersprüche"}`; })()} zwischen den Dokumenten offen · zum Prüfen</span></a>` : ""}
       ${blocks.map((b) => `<section class="card" ${b.cave ? 'style="border-color:#F0C4CB"' : ""}>
-          <div class="card-head"><h2 ${b.cave ? 'style="color:#A3162B"' : ""}>${esc(b.title)}</h2>${b.badge || ""}<span style="flex:1"></span>
-            <button class="chip-btn" data-copy="${b.key}" aria-label="${esc(b.title)} kopieren">Kopieren</button></div>
+          <div class="card-head"><div class="card-title"><h2 ${b.cave ? 'style="color:#A3162B"' : ""}>${esc(b.title)}</h2>${b.sub || ""}</div>
+            <div class="card-actions">
+              <button class="icon-btn" data-copy="${b.key}" aria-label="${esc(b.title)} kopieren" title="Kopieren">${ICON.copyLine}</button>
+              <a class="icon-btn" href="#/case/${enc(id)}/info/${b.key}" aria-label="Details zu ${esc(b.title)}" title="Details">${ICON.infoLine}</a>
+              <a class="icon-btn" href="#/case/${enc(id)}?tab=${b.edit}" aria-label="${esc(b.title)} bearbeiten" title="Bearbeiten">${ICON.edit}</a>
+            </div></div>
           ${b.html}</section>`).join("")}
     </div>
     <div class="foot">
@@ -1128,7 +1149,7 @@ function tabResult(el, d) {
     </div>`;
   el.querySelectorAll("[data-copy]").forEach((btn) => {
     const b = blocks.find((x) => x.key === btn.dataset.copy);
-    btn.onclick = () => copyText(b.text, btn);
+    btn.onclick = () => copyText(b.text, btn, "", ICON.checkLine);
   });
   // Load the handover text right away: browsers (iOS Safari above all) only allow copying
   // directly inside the tap, not after waiting for the server.
@@ -1175,6 +1196,97 @@ function openMail(subject, body) {
   } else if (!window.open(web, "_blank", "noopener")) {
     location.href = web;                                    // pop-up blocked: open in this tab
   }
+}
+
+// ---------- detail page per group (read only), opened with the "i" on a result card
+
+const INFO_GROUPS = {
+  cave: { title: "CAVE", edit: "review", cave: true },
+  diag: { title: "Diagnosen", edit: "docs" },
+  med: { title: "Medikation", edit: "review" },
+  lab: { title: "Auffällige Laborwerte", edit: "labs" },
+  bef: { title: "Befunde", edit: "docs" },
+  kontakt: { title: "Kontakt / Vorsorgevollmacht", edit: "docs" },
+};
+
+function infoItems(key, r) {
+  const s = r.summary;
+  const dateDE = (iso) => (/^\d{4}-\d{2}-\d{2}/.test(iso || "") ? iso.slice(0, 10).split("-").reverse().join(".") : iso || "");
+  if (key === "cave") return s.cave.map((c) => ({ title: c.text, sources: c.sources }));
+  if (key === "diag") return s.diagnoses.map((x) => ({ title: x.text, chip: x.icd10, kind: "diagnoses", sources: x.sources, ai: x.ai_corrected,
+    rows: [["Zusatz", (x.details || []).join(", ")], ["ICD-10", x.icd10 ? `${x.icd10}, aus dem Dokument` : "im Dokument nicht angegeben"], ["Datum", dateDE(x.date)]] }));
+  if (key === "lab") return s.labs.filter((l) => l.flag).map((l) => ({ title: l.name, kind: "labs", sources: l.sources,
+    chip: `${l.value} ${l.unit || ""}`.trim(),
+    rows: [["Bewertung", l.flag === "H" ? "erhöht" : l.flag === "L" ? "erniedrigt" : ""], ["Referenz", l.ref || l.reference || ""], ["Datum", dateDE(l.date)]] }));
+  if (key === "bef") return (s.findings || []).map((f) => ({ title: f.text, sources: f.sources }));
+  if (key === "kontakt") return s.contacts.map((c) => ({ title: c.text, sources: c.sources }));
+  return [];
+}
+
+async function viewInfo(id, key) {
+  const g = INFO_GROUPS[key];
+  if (!g) return go(`#/case/${enc(id)}`);
+  $app.innerHTML = `<div class="screen"><div class="head"><div class="muted">Fall wird geladen …</div></div></div>`;
+  const d = await loadCase(id);
+  const r = d.result;
+  if (!r) return go(`#/case/${enc(id)}`);
+  const name = (r.patient || {}).name || d.case.label;
+  const head = (sub) => `
+      <div class="nav"><a class="icon-btn" href="#/case/${enc(id)}" aria-label="Zurück zum Ergebnis">${ICON.back}</a>
+        <span class="label info-name">${esc(name)}</span>
+        <a class="icon-btn info-edit" href="#/case/${enc(id)}?tab=${g.edit}" aria-label="${esc(g.title)} bearbeiten" title="Bearbeiten">${ICON.edit}</a></div>
+      <div class="patient-head"><h1 ${g.cave ? 'style="color:#A3162B"' : ""}>${esc(g.title)}</h1><span class="meta">${esc(sub)}</span></div>`;
+
+  if (key === "med") {            // left free on purpose: this page's content is built separately
+    const n = d.review.meds.length, ok = d.review.meds.filter((m) => m.confirmed).length;
+    $app.innerHTML = `<div class="screen">${head(`${n} ${n === 1 ? "Eintrag" : "Einträge"} · ${ok} geprüft`)}
+      <div class="body" style="padding-top:0"><div class="info-free" id="med-details"></div></div></div>`;
+    return;
+  }
+
+  const items = infoItems(key, r);
+  const docOf = (page) => r.documents.find((x) => (x.pages || []).includes(page));
+  const sourceLine = (pages) => (pages || []).map((pg) => {
+    const doc = docOf(pg);
+    return [doc && doc.title, doc && doc.issuer, `S. ${pg}`].filter(Boolean).join(" · ");
+  }).join("\n");
+  const norm = (t) => (t || "").toLowerCase();
+  // the OCR line(s) a value came from: the page's facts carry them (same data as the marked page image)
+  const quote = (it) => {
+    // "Antikoagulation: Apixaban 2,5 mg" → also try the part after the colon
+    const keys = [...new Set([it.title, it.title.split(": ").pop()])].map(norm).filter(Boolean);
+    for (const pg of it.sources || []) {
+      const page = r.pages.find((x) => x.page === pg);
+      const facts = ((page && page.facts) || []).filter((f) => f.source_text && f.label && (!it.kind || f.kind === it.kind));
+      const hit = facts.find((f) => keys.some((k) => norm(f.label).includes(k) || k.includes(norm(f.label))))   // by name first
+        || facts.find((f) => keys.some((k) => norm(f.source_text).includes(k)));
+      // show the passage only if it really mentions the entry (the AI sometimes stores a neighbouring paragraph)
+      const words = keys[keys.length - 1].split(/[^a-zäöüß]+/).filter((w) => w.length >= 5);
+      if (hit && (!words.length || words.some((w) => norm(hit.source_text).includes(w)))) return hit.source_text;
+    }
+    return "";
+  };
+  const fixes = (it) => (r.summary.corrections || []).filter((c) => c.corrected && norm(it.title).includes(norm(c.corrected)));
+  const nDocs = new Set(items.flatMap((it) => (it.sources || []).map((pg) => (docOf(pg) || {}).doc_id || `p${pg}`))).size;
+  $app.innerHTML = `<div class="screen">
+      ${head(`${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"} aus ${nDocs} ${nDocs === 1 ? "Dokument" : "Dokumenten"} · nur Ansicht`)}
+      <div class="body" style="padding-top:0">
+        ${items.map((it) => {
+          const q = quote(it), fx = fixes(it), pg = (it.sources || [])[0];
+          return `<section class="card info-card" ${g.cave ? 'style="border-color:#F0C4CB"' : ""}>
+            <div class="info-top"><h2>${esc(it.title)}</h2>${it.chip ? `<span class="info-chip ${g.cave ? "cave" : ""}">${esc(it.chip)}</span>` : ""}</div>
+            <dl class="info-grid">
+              ${(it.rows || []).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}
+              ${(it.sources || []).length ? `<dt>Quelle</dt><dd style="white-space:pre-line">${esc(sourceLine(it.sources))}</dd>` : ""}
+            </dl>
+            ${q ? `<div class="info-quote"><span>Originaltext</span>${esc(q)}</div>` : ""}
+            ${fx.map((c) => `<div class="note warn">${ICON.info}<span>KI-Korrektur: „${esc(c.original)}“ wurde zu „${esc(c.corrected)}“ geändert.</span></div>`).join("")}
+            ${it.ai && !fx.length ? `<div class="note warn">${ICON.info}<span>Dieser Eintrag wurde von der KI korrigiert.</span></div>` : ""}
+            ${pg ? `<a class="info-link" href="#/case/${enc(id)}/page/${pg}">${ICON.docSmall}Stelle im Original zeigen</a>` : ""}
+          </section>`;
+        }).join("") || `<div class="empty">Keine Einträge.</div>`}
+        <div style="height:28px"></div>
+      </div></div>`;
 }
 
 // ---------- tab: Prüfen (Widersprüche + Medikation)
