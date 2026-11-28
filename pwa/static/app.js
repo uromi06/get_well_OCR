@@ -35,6 +35,7 @@ const ICON = {
   info: `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>`,
   server: `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6B82" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>`,
   copy: `<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
+  mail: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`,
 };
 
 function toast(msg, error = false) {
@@ -102,15 +103,36 @@ function dayLabel(iso) {
 }
 const timeLabel = (iso) => (iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "");
 
+// Copy without the async clipboard API (plain http, older Safari). Must run synchronously inside the tap.
+function copyLegacy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px";
+  document.body.appendChild(ta);
+  ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);  // iOS needs the explicit range
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+// Last resort: show the text selected, so it can be copied by hand (long press → Kopieren)
+function copyManually(text) {
+  sheet("Text kopieren", `
+    <p class="muted" style="margin:0">Automatisches Kopieren ist hier nicht erlaubt. Text ist markiert: lange drücken und „Kopieren“ wählen.</p>
+    <textarea readonly style="width:100%;min-height:220px;font:14px var(--font);padding:10px;border-radius:12px;border:1px solid var(--line, #d6dde8)">${esc(text)}</textarea>`,
+    (el) => { const ta = el.querySelector("textarea"); setTimeout(() => { ta.focus(); ta.select(); ta.setSelectionRange(0, text.length); }, 50); });
+}
+
 async function copyText(text, btn, label = "Kopieren", doneLabel = "✓ Kopiert") {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const ta = document.createElement("textarea");            // fallback for plain http
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand("copy"); ta.remove();
-    if (!ok) return toast("Kopieren nicht möglich.", true);
+  let ok = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { ok = copyLegacy(text); }
+  } else {
+    ok = copyLegacy(text);
   }
+  if (!ok) return copyManually(text);
   if (btn) {
     const keep = btn.innerHTML;
     btn.classList.add("done");
@@ -744,7 +766,6 @@ function viewScan() {
   document.getElementById("shots").onclick = (e) => { const b = e.target.closest(".shot"); if (b) openPage(+b.dataset.i); };
 
   // ---------- "Weiter": check the pages in a sheet, then send them off
-  const engines = S.meta.engines.filter((e) => e.available);
   const openReview = () => {
     const n = sc.shots.length;
     layer.innerHTML = `
@@ -758,7 +779,6 @@ function viewScan() {
           <div class="review-row">
             <span class="badge">${ICON.server}</span>
             <span class="main"><span class="name" id="engname">${esc(engineLabel(sc.engine))}</span><span class="sub">Texterkennung</span></span>
-            ${engines.length > 1 ? `<button class="text-btn" data-act="engine">Ändern</button>` : ""}
           </div>
           <div class="review-actions">
             <button class="cta flat" data-act="go">Auswerten</button>
@@ -773,10 +793,6 @@ function viewScan() {
       if (page) return openPage(+page.dataset.page);
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "edit") layer.innerHTML = "";
-      if (act === "engine") {
-        sc.engine = engines[(engines.findIndex((x) => x.id === sc.engine) + 1) % engines.length].id;
-        document.getElementById("engname").textContent = engineLabel(sc.engine);
-      }
       if (act === "go") {
         const files = sc.shots.map((s) => s.file), engine = sc.engine;
         discard();
@@ -973,12 +989,15 @@ async function viewAnalyse(id) {
     if (!location.hash.startsWith(`#/analyse/${enc(id)}`)) return;
     const engine = engineLabel(job.engine || S.meta.default_engine);
     if (job.state === "running") {
-      const ocrDone = job.done >= job.total;
+      const ocrDone = job.done >= job.total, ai = job.ai_total > 0;
       $app.innerHTML = analyseScreen({
-        title: "Unterlagen werden ausgewertet", lead: ocrDone ? "Fakten werden abgeglichen …" : `Seite ${job.done} von ${job.total} gelesen`,
+        title: "Unterlagen werden ausgewertet",
+        lead: !ocrDone ? `Seite ${job.done} von ${job.total} gelesen`
+          : ai ? `Seite ${job.ai_done + 1} von ${job.ai_total} wird mit KI ausgewertet` : "Fakten werden abgeglichen …",
         previewUrl: preview, engine,
         steps: [{ label: "Hochgeladen", state: "done" }, { label: "Text erkannt (OCR)", state: ocrDone ? "done" : "run", detail: `${job.done}/${job.total}` },
-          { label: "Wichtige Infos extrahieren", state: ocrDone ? "run" : "todo" }, { label: "Copy-ready aufbereiten", state: "todo" }],
+          { label: "Wichtige Infos extrahieren (KI)", state: ocrDone ? "run" : "todo", detail: ai ? `${job.ai_done}/${job.ai_total}` : "" },
+          { label: "Copy-ready aufbereiten", state: "todo" }],
         action: `<button class="cta soft" disabled>Ergebnis ansehen</button>`,
       });
       S.pollTimer = setTimeout(tick, 1500);
@@ -1006,14 +1025,12 @@ async function loadCase(id) {
 
 function caseMenu(d) {
   sheet("Verarbeitung", `
-    <label class="field">Texterkennung<select id="engine">${S.meta.engines.map((e) =>
-      `<option value="${e.id}" ${e.id === ((d.result && d.result.engine) || S.meta.default_engine) ? "selected" : ""} ${e.available ? "" : "disabled"}>${esc(e.label)}${e.available ? "" : " (nicht eingerichtet)"}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" id="fresh"> Texterkennung neu ausführen (sonst gespeicherte Ergebnisse)</label>
     <button class="btn primary" id="reprocess">Fall erneut verarbeiten</button>
     ${d.case.private ? `<button class="btn danger" id="delcase">Fall und alle Daten löschen</button>` : ""}`, (el, close) => {
     el.querySelector("#reprocess").onclick = async () => {
       try {
-        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: el.querySelector("#engine").value, fresh: el.querySelector("#fresh").checked } });
+        await api(`/api/cases/${enc(d.case.id)}/process`, { method: "POST", json: { engine: "mistral", fresh: el.querySelector("#fresh").checked } });
         close(); go(`#/analyse/${enc(d.case.id)}`);
       } catch (e) { toast(e.message, true); }
     };
@@ -1094,6 +1111,7 @@ function tabResult(el, d) {
 
   el.innerHTML = `
     <div class="body" style="padding-top:0">
+      ${(s.extract_errors || []).length ? `<div class="note warn">${ICON.info}<span>KI-Auswertung fehlgeschlagen für Seite ${esc(s.extract_errors.map((e) => e.page).join(", "))}: dort nur regelbasiert ausgewertet.</span></div>` : ""}
       <div class="note warn">${ICON.info}<span>Automatischer Auszug aus den Unterlagen. Bitte vor Übernahme in die Akte prüfen${d.ready ? "" : " und die Medikation im Tab „Prüfen“ bestätigen"}.</span></div>
       ${s.conflicts.length > d.review.conflicts_ok.length ? `<a class="note info" href="#/case/${enc(id)}?tab=review">${ICON.info}<span>${(() => { const n = s.conflicts.length - d.review.conflicts_ok.length; return `${n} ${n === 1 ? "Widerspruch" : "Widersprüche"}`; })()} zwischen den Dokumenten offen · zum Prüfen</span></a>` : ""}
       ${blocks.map((b) => `<section class="card" ${b.cave ? 'style="border-color:#F0C4CB"' : ""}>
@@ -1102,18 +1120,61 @@ function tabResult(el, d) {
           ${b.html}</section>`).join("")}
     </div>
     <div class="foot">
-      <button class="cta" id="all">${ICON.copy}<span>Übergabetext kopieren</span></button>
+      <div class="cta-row">
+        <button class="cta" id="all">${ICON.copy}<span>Übergabetext kopieren</span></button>
+        <button class="cta-icon" id="mail" aria-label="In Gmail senden" title="In Gmail senden">${ICON.mail}</button>
+      </div>
       <a class="link-btn" href="#/case/${enc(id)}?tab=export">Export, FHIR und Medikationsplan</a>
     </div>`;
   el.querySelectorAll("[data-copy]").forEach((btn) => {
     const b = blocks.find((x) => x.key === btn.dataset.copy);
     btn.onclick = () => copyText(b.text, btn);
   });
+  // Load the handover text right away: browsers (iOS Safari above all) only allow copying
+  // directly inside the tap, not after waiting for the server.
+  let report = null;
+  const loadReport = () => api(`/api/cases/${enc(id)}/report?lang=de`).then((t) => (report = t));
+  const pending = loadReport().catch(() => null);
+  const ensureReport = async () => {
+    if (report === null) await pending;
+    if (report === null) await loadReport();      // first load failed: try again, show the error
+    return report;
+  };
   document.getElementById("all").onclick = async (e) => {
     const btn = e.currentTarget;
-    try { copyText(await api(`/api/cases/${enc(id)}/report?lang=de`), btn, "Übergabetext kopieren", "✓ Übergabetext kopiert"); }
+    try { copyText(report ?? await ensureReport(), btn, "Übergabetext kopieren", "✓ Übergabetext kopiert"); }
     catch (err) { toast(err.message, true); }
   };
+  // E-mail: opens Gmail with subject and handover text filled in
+  document.getElementById("mail").onclick = async () => {
+    try { openMail(`Übergabe – ${d.case.label || id}`, report ?? await ensureReport()); }
+    catch (err) { toast(err.message, true); }
+  };
+}
+
+// Opens a new Gmail message with subject and text filled in (recipient is entered in Gmail):
+//   Android: the Gmail app (falls back to Gmail in the browser if the app is missing)
+//   iPhone:  the Gmail app if installed, else Gmail in the browser
+//   desktop: Gmail in a new browser tab
+function gmailWebUrl(subject, body) {
+  return `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function openMail(subject, body) {
+  const q = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const web = gmailWebUrl(subject, body);
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) {
+    location.href = "intent:#Intent;action=android.intent.action.SEND;type=text/plain;package=com.google.android.gm;"
+      + `S.android.intent.extra.SUBJECT=${encodeURIComponent(subject)};S.android.intent.extra.TEXT=${encodeURIComponent(body)};`
+      + `S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  } else if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+    const t = setTimeout(() => { if (!document.hidden) location.href = web; }, 1200);  // app missing: stay → web
+    document.addEventListener("visibilitychange", () => clearTimeout(t), { once: true });
+    location.href = `googlegmail:///co?${q}`;
+  } else if (!window.open(web, "_blank", "noopener")) {
+    location.href = web;                                    // pop-up blocked: open in this tab
+  }
 }
 
 // ---------- tab: Prüfen (Widersprüche + Medikation)

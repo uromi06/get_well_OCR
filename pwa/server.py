@@ -95,8 +95,8 @@ def meta() -> dict:
         "login_configured": auth.credentials() is not None,
         "engines": [{"id": "tesseract", "label": "Tesseract", "available": True},
                     {"id": "mistral", "label": "Mistral OCR", "available": mistral.ocr_available()}],
-        # The PWA reads with Mistral OCR by default; Tesseract only if Mistral is not set up on this server
-        "default_engine": "mistral" if mistral.ocr_available() else "tesseract",
+        # The PWA always reads with Mistral OCR (no engine choice in the app)
+        "default_engine": "mistral",
         "chat_available": mistral.chat_available(),
         "doc_types": {k: {"label": v, "color": DOC_TYPE_COLORS.get(k, "#94a3b8")}
                       for k, v in DOC_TYPE_LABELS.items() if k},
@@ -125,9 +125,10 @@ def list_cases(_: str = Depends(auth.require_user)) -> list[dict]:
 
 
 @app.post("/api/cases")
-def create_case(files: list[UploadFile] = File(...), label: str = Form(""), engine: Engine = Form("tesseract"),
+def create_case(files: list[UploadFile] = File(...), label: str = Form(""), engine: Engine = Form("mistral"),
                 _: str = Depends(auth.require_user)) -> dict:
-    if engine == "mistral" and not mistral.ocr_available():
+    engine = "mistral"                        # the PWA always reads with Mistral OCR
+    if not mistral.ocr_available():
         raise HTTPException(400, "Mistral OCR ist auf dem Server nicht eingerichtet.")
     if len(files) > ocr_api.MAX_FILES:
         raise HTTPException(413, f"Höchstens {ocr_api.MAX_FILES} Dateien pro Fall.")
@@ -152,15 +153,15 @@ def create_case(files: list[UploadFile] = File(...), label: str = Form(""), engi
 
 
 class Process(BaseModel):
-    engine: Engine = "tesseract"
+    engine: Engine = "mistral"
     fresh: bool = False
 
 
 @app.post("/api/cases/{case_id}/process")
 def process(case_id: str, body: Process, _: str = Depends(auth.require_user)) -> dict:
-    if body.engine == "mistral" and not mistral.ocr_available():
+    if not mistral.ocr_available():
         raise HTTPException(400, "Mistral OCR ist auf dem Server nicht eingerichtet.")
-    return cases.start_processing(_case_or_404(case_id), body.engine, body.fresh)
+    return cases.start_processing(_case_or_404(case_id), "mistral", body.fresh)
 
 
 @app.get("/api/cases/{case_id}/job")
