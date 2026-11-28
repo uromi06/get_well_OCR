@@ -60,20 +60,26 @@ def start_processing(c: dict, engine: str, fresh: bool) -> dict:
     with _lock:
         if _jobs.get(c["id"], {}).get("state") == "running":
             return dict(_jobs[c["id"]])
-        _jobs[c["id"]] = {"state": "running", "done": 0, "total": c["n_pages"], "error": None, "engine": engine}
+        _jobs[c["id"]] = {"state": "running", "done": 0, "total": c["n_pages"], "error": None, "engine": engine,
+                           "extractor": "llm", "ai_done": 0, "ai_total": 0}
 
     def progress(msg: str):
         m = re.match(r"\[(\d+)/(\d+)\]", msg)
         if m:
             with _lock:
                 _jobs[c["id"]].update(done=int(m.group(1)), total=int(m.group(2)))
+        m = re.match(r"\[KI (\d+)/(\d+)\]", msg)      # AI extraction, page by page
+        if m:
+            with _lock:
+                _jobs[c["id"]].update(ai_done=int(m.group(1)) - 1, ai_total=int(m.group(2)))
 
     def run():
         try:
-            process_case(c["pages_dir"], store.out_dir(c["id"]), engine, fresh, progress=progress)
+            # The PWA reads and extracts with Mistral; a page whose AI extraction fails falls back to the rules
+            process_case(c["pages_dir"], store.out_dir(c["id"]), engine, fresh, progress=progress, extractor="llm")
             state, error = "done", None
         except mistral.MistralError as e:
-            state, error = "error", f"Mistral OCR nicht erreichbar: {e}. Bitte Tesseract wählen."
+            state, error = "error", f"Mistral nicht erreichbar: {e}. Bitte später erneut versuchen."
         except Exception as e:          # shown to the user, the thread must not die silently
             state, error = "error", f"Verarbeitung fehlgeschlagen: {e}"
         with _lock:
