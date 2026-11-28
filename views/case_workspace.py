@@ -17,7 +17,6 @@ import json
 import re
 from datetime import datetime
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -527,16 +526,6 @@ with tabs[2]:
                 column_config={"Seite": st.column_config.NumberColumn(width="small"),
                                "Änderung": st.column_config.TextColumn(width="medium"),
                                "Textstelle": st.column_config.TextColumn(width="large")})
-            points = [h for h in hist if h["daily"]]
-            if len(points) >= 2 and len({h["daily"][1] for h in points}) == 1:
-                unit = points[0]["daily"][1]
-                chart_df = pd.DataFrame({
-                    "Quelle": [f"{i}. S. {h['page']} · {de_date(h['date'])}" for i, h in enumerate(points, 1)],
-                    "Tagesdosis": [h["daily"][0] for h in points]})
-                st.altair_chart(alt.Chart(chart_df).mark_line(point=True, interpolate="step-after").encode(
-                    x=alt.X("Quelle:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("Tagesdosis:Q", title=f"Tagesdosis ({unit})", scale=alt.Scale(zero=True)),
-                    tooltip=["Quelle", "Tagesdosis"]).properties(height=220), use_container_width=True)
 
     changes = _audit()
     if changes:
