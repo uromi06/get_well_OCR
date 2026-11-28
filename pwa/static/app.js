@@ -1092,11 +1092,19 @@ function tabResult(el, d) {
   if (s.cave.length) blocks.push({ key: "cave", title: "CAVE", cave: true,
     html: `<div class="card-text">${s.cave.map((c) => `${esc(c.text)}${sources(c.sources)}`).join("\n")}</div>`,
     text: "CAVE:\n" + s.cave.map((c) => c.text).join("\n") });
+  const safety = s.safety || [];
+  const alerted = new Set(safety.flatMap((a) => a.drugs.map((n) => n.toLowerCase())));
+  const safetyLine = (a) => `${a.drugs.join(" + ")}: ${a.issue}${a.action ? ` – ${a.action}` : ""}`;
+  if (safety.length) blocks.push({ key: "safety", title: "Medikationssicherheit", cave: true,
+    badge: `<span class="flag">KI-Prüfung</span>`,
+    html: `<div style="display:flex;flex-direction:column;gap:8px">${safety.map((a) => `<div><b>${esc(a.drugs.join(" + "))}</b> <span class="pill ${a.severity === "high" ? "cave" : "warn"}">${a.kind === "dose" ? "Dosis" : "Kombination"}${a.severity === "high" ? " · hoch" : ""}</span>${sources(a.sources)}<div>${esc(a.issue)}</div>${a.action ? `<div class="muted">${esc(a.action)}</div>` : ""}</div>`).join("")}
+      <div class="muted">Automatische Prüfung, ersetzt keine ärztliche Bewertung.</div></div>`,
+    text: "Medikationssicherheit (KI-Prüfung):\n" + safety.map((a) => (a.severity === "high" ? "[hoch] " : "") + safetyLine(a)).join("\n") });
   blocks.push({ key: "diag", title: "Diagnosen",
     html: s.diagnoses.length ? `<div class="card-text">${s.diagnoses.slice(0, 12).map((x) => `${esc(x.text)}${x.icd10 ? ` (${esc(x.icd10)})` : ""}${sources(x.sources)}`).join("\n")}</div>` : `<div class="muted">Keine Diagnosen erkannt.</div>`,
     text: "Diagnosen:\n" + s.diagnoses.slice(0, 12).map((x) => x.text + (x.icd10 ? ` (${x.icd10})` : "")).join("\n") });
   blocks.push({ key: "med", title: "Medikation", badge: rv.meds.length && !d.ready ? `<span class="flag">${rv.meds.filter((m) => !m.confirmed).length} nicht bestätigt</span>` : "",
-    html: meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
+    html: meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}${alerted.has(m.name.toLowerCase()) ? ' <span class="pill cave">⚠ prüfen</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
       ${stopped.length ? `<div class="muted">Abgesetzt: ${esc(stopped.map(medLine).join(", "))}</div>` : ""}` : `<div class="muted">Keine Medikamente erkannt.</div>`,
     text: "Medikation:\n" + meds.map((m) => `${medLine(m)} ${m.dosing || ""}`.trim()).join("\n") + (stopped.length ? `\nAbgesetzt: ${stopped.map(medLine).join(", ")}` : "") });
   if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte",

@@ -31,7 +31,8 @@ LABELS = {
            "cols": ["Wirkstoff", "Stärke", "Mo-Mi-Ab-Na", "Status", "Quelle"],
            "status": {"active": "", "new": "neu", "paused": "pausiert", "stopped": "abgesetzt"},
            "stopped": "Abgesetzt / pausiert:", "clarify": "Zu klären (Widersprüche zwischen Dokumenten):",
-           "warn": "Hinweise:", "labs": "Labor (auffällige Werte, neuester Wert):", "contact": "Kontakt / Vorsorgevollmacht:",
+           "warn": "Hinweise:", "safety": "Medikationssicherheit (KI-Prüfung, ärztlich bewerten):", "high": "hoch",
+           "labs": "Labor (auffällige Werte, neuester Wert):", "contact": "Kontakt / Vorsorgevollmacht:",
            "unconfirmed": "ENTWURF: Medikation noch nicht ärztlich bestätigt.",
            "confirmed": "Medikation ärztlich geprüft{by}.",
            "footer": "Erstellt mit Get Well OCR am {ts}. Alle Angaben mit Quellseite [S. x] im Original prüfbar."},
@@ -44,7 +45,8 @@ LABELS = {
            "cols": ["Drug", "Strength", "Mo-No-Ev-Ni", "Status", "Source"],
            "status": {"active": "", "new": "new", "paused": "paused", "stopped": "stopped"},
            "stopped": "Stopped / paused:", "clarify": "To clarify (conflicts between documents):",
-           "warn": "Warnings:", "labs": "Labs (abnormal, latest value):", "contact": "Contact / power of attorney:",
+           "warn": "Warnings:", "safety": "Medication safety (AI check, for clinical review):", "high": "high",
+           "labs": "Labs (abnormal, latest value):", "contact": "Contact / power of attorney:",
            "unconfirmed": "DRAFT: medication not yet confirmed by a doctor.",
            "confirmed": "Medication reviewed by a doctor{by}.",
            "footer": "Created with Get Well OCR on {ts}. Every item can be checked on its source page [p. x]."},
@@ -173,6 +175,10 @@ def er_report(result: dict, meds: list[dict] | None = None, lang: str = "de",
         out += ["", L["clarify"], *[f"- {_clean(c['text'])} {_src(c['sources'], L)}".rstrip() for c in open_conflicts]]
     if s["warnings"]:
         out += ["", L["warn"], *[f"- {_clean(w['text'])} {_src(w['sources'], L)}".rstrip() for w in s["warnings"]]]
+    if s.get("safety"):
+        out += ["", L["safety"], *[
+            f"- {'[' + L['high'] + '] ' if a['severity'] == 'high' else ''}{' + '.join(a['drugs'])}: {a['issue']}"
+            f"{' – ' + a['action'] if a.get('action') else ''} {_src(a['sources'], L)}".rstrip() for a in s["safety"]]]
 
     # --- labs ------------------------------------------------------------------------------
     flagged = [l for l in s["labs"] if l["flag"]]
