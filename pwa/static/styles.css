@@ -96,6 +96,22 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; 
 .card-actions .icon-btn { color: var(--primary); }
 .card-actions .icon-btn:hover { background: var(--primary-soft); }
 .card-actions .icon-btn.done { color: var(--ok); }
+.info-name { font-size: 14px; font-weight: 500; color: var(--ink-2); flex: 1; }
+.info-edit { color: var(--primary); }
+.info-card { display: flex; flex-direction: column; gap: 10px; }
+.info-top { display: flex; align-items: flex-start; gap: 8px; }
+.info-top h2 { flex: 1; font-size: 16px; font-weight: 600; line-height: 1.35; }
+.info-chip { flex-shrink: 0; padding: 4px 8px; border-radius: 8px; background: var(--primary-soft); color: #245A93; font-size: 13px;
+             font-weight: 600; font-variant-numeric: tabular-nums; }
+.info-chip.cave { background: var(--cave-bg); color: var(--cave); }
+.info-grid { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 6px 8px; margin: 0; font-size: 14px; line-height: 1.4; }
+.info-grid dt { color: var(--ink-2); }
+.info-grid dd { margin: 0; }
+.info-quote { padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 13px; line-height: 1.5; color: #3D5372; }
+.info-quote span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.info-link { align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500;
+             color: var(--primary); }
+.info-free { min-height: 420px; border: 2px dashed #C5D2E3; border-radius: 16px; }
 .view-title { padding: 0 20px 12px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .06em; }
 .card-text { font-size: 15px; line-height: 1.6; white-space: pre-line; }
 .rows { display: flex; flex-direction: column; }

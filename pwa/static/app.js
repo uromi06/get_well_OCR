@@ -38,6 +38,7 @@ const ICON = {
   copyLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>`,
   edit: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17H5v-3z"/></svg>`,
   checkLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>`,
+  infoLine: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>`,
   mail: `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3070B3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`,
 };
 
@@ -176,6 +177,7 @@ async function route() {
     if (hash === "#/scan") return viewScan();
     if ((m = /^#\/analyse\/([^/?]+)$/.exec(hash))) return viewAnalyse(decodeURIComponent(m[1]));
     if ((m = /^#\/case\/([^/?]+)\/page\/(\d+)$/.exec(hash))) return viewPage(decodeURIComponent(m[1]), +m[2]);
+    if ((m = /^#\/case\/([^/?]+)\/info\/(\w+)$/.exec(hash))) return viewInfo(decodeURIComponent(m[1]), m[2]);
     if ((m = /^#\/case\/([^/?]+)(?:\?tab=(\w+))?$/.exec(hash))) return viewCase(decodeURIComponent(m[1]), m[2] || "result");
     go("#/");
   } catch (e) {
@@ -1133,6 +1135,7 @@ function tabResult(el, d) {
           <div class="card-head"><div class="card-title"><h2 ${b.cave ? 'style="color:#A3162B"' : ""}>${esc(b.title)}</h2>${b.sub || ""}</div>
             <div class="card-actions">
               <button class="icon-btn" data-copy="${b.key}" aria-label="${esc(b.title)} kopieren" title="Kopieren">${ICON.copyLine}</button>
+              <a class="icon-btn" href="#/case/${enc(id)}/info/${b.key}" aria-label="Details zu ${esc(b.title)}" title="Details">${ICON.infoLine}</a>
               <a class="icon-btn" href="#/case/${enc(id)}?tab=${b.edit}" aria-label="${esc(b.title)} bearbeiten" title="Bearbeiten">${ICON.edit}</a>
             </div></div>
           ${b.html}</section>`).join("")}
@@ -1193,6 +1196,97 @@ function openMail(subject, body) {
   } else if (!window.open(web, "_blank", "noopener")) {
     location.href = web;                                    // pop-up blocked: open in this tab
   }
+}
+
+// ---------- detail page per group (read only), opened with the "i" on a result card
+
+const INFO_GROUPS = {
+  cave: { title: "CAVE", edit: "review", cave: true },
+  diag: { title: "Diagnosen", edit: "docs" },
+  med: { title: "Medikation", edit: "review" },
+  lab: { title: "Auffällige Laborwerte", edit: "labs" },
+  bef: { title: "Befunde", edit: "docs" },
+  kontakt: { title: "Kontakt / Vorsorgevollmacht", edit: "docs" },
+};
+
+function infoItems(key, r) {
+  const s = r.summary;
+  const dateDE = (iso) => (/^\d{4}-\d{2}-\d{2}/.test(iso || "") ? iso.slice(0, 10).split("-").reverse().join(".") : iso || "");
+  if (key === "cave") return s.cave.map((c) => ({ title: c.text, sources: c.sources }));
+  if (key === "diag") return s.diagnoses.map((x) => ({ title: x.text, chip: x.icd10, kind: "diagnoses", sources: x.sources, ai: x.ai_corrected,
+    rows: [["Zusatz", (x.details || []).join(", ")], ["ICD-10", x.icd10 ? `${x.icd10}, aus dem Dokument` : "im Dokument nicht angegeben"], ["Datum", dateDE(x.date)]] }));
+  if (key === "lab") return s.labs.filter((l) => l.flag).map((l) => ({ title: l.name, kind: "labs", sources: l.sources,
+    chip: `${l.value} ${l.unit || ""}`.trim(),
+    rows: [["Bewertung", l.flag === "H" ? "erhöht" : l.flag === "L" ? "erniedrigt" : ""], ["Referenz", l.ref || l.reference || ""], ["Datum", dateDE(l.date)]] }));
+  if (key === "bef") return (s.findings || []).map((f) => ({ title: f.text, sources: f.sources }));
+  if (key === "kontakt") return s.contacts.map((c) => ({ title: c.text, sources: c.sources }));
+  return [];
+}
+
+async function viewInfo(id, key) {
+  const g = INFO_GROUPS[key];
+  if (!g) return go(`#/case/${enc(id)}`);
+  $app.innerHTML = `<div class="screen"><div class="head"><div class="muted">Fall wird geladen …</div></div></div>`;
+  const d = await loadCase(id);
+  const r = d.result;
+  if (!r) return go(`#/case/${enc(id)}`);
+  const name = (r.patient || {}).name || d.case.label;
+  const head = (sub) => `
+      <div class="nav"><a class="icon-btn" href="#/case/${enc(id)}" aria-label="Zurück zum Ergebnis">${ICON.back}</a>
+        <span class="label info-name">${esc(name)}</span>
+        <a class="icon-btn info-edit" href="#/case/${enc(id)}?tab=${g.edit}" aria-label="${esc(g.title)} bearbeiten" title="Bearbeiten">${ICON.edit}</a></div>
+      <div class="patient-head"><h1 ${g.cave ? 'style="color:#A3162B"' : ""}>${esc(g.title)}</h1><span class="meta">${esc(sub)}</span></div>`;
+
+  if (key === "med") {            // left free on purpose: this page's content is built separately
+    const n = d.review.meds.length, ok = d.review.meds.filter((m) => m.confirmed).length;
+    $app.innerHTML = `<div class="screen">${head(`${n} ${n === 1 ? "Eintrag" : "Einträge"} · ${ok} geprüft`)}
+      <div class="body" style="padding-top:0"><div class="info-free" id="med-details"></div></div></div>`;
+    return;
+  }
+
+  const items = infoItems(key, r);
+  const docOf = (page) => r.documents.find((x) => (x.pages || []).includes(page));
+  const sourceLine = (pages) => (pages || []).map((pg) => {
+    const doc = docOf(pg);
+    return [doc && doc.title, doc && doc.issuer, `S. ${pg}`].filter(Boolean).join(" · ");
+  }).join("\n");
+  const norm = (t) => (t || "").toLowerCase();
+  // the OCR line(s) a value came from: the page's facts carry them (same data as the marked page image)
+  const quote = (it) => {
+    // "Antikoagulation: Apixaban 2,5 mg" → also try the part after the colon
+    const keys = [...new Set([it.title, it.title.split(": ").pop()])].map(norm).filter(Boolean);
+    for (const pg of it.sources || []) {
+      const page = r.pages.find((x) => x.page === pg);
+      const facts = ((page && page.facts) || []).filter((f) => f.source_text && f.label && (!it.kind || f.kind === it.kind));
+      const hit = facts.find((f) => keys.some((k) => norm(f.label).includes(k) || k.includes(norm(f.label))))   // by name first
+        || facts.find((f) => keys.some((k) => norm(f.source_text).includes(k)));
+      // show the passage only if it really mentions the entry (the AI sometimes stores a neighbouring paragraph)
+      const words = keys[keys.length - 1].split(/[^a-zäöüß]+/).filter((w) => w.length >= 5);
+      if (hit && (!words.length || words.some((w) => norm(hit.source_text).includes(w)))) return hit.source_text;
+    }
+    return "";
+  };
+  const fixes = (it) => (r.summary.corrections || []).filter((c) => c.corrected && norm(it.title).includes(norm(c.corrected)));
+  const nDocs = new Set(items.flatMap((it) => (it.sources || []).map((pg) => (docOf(pg) || {}).doc_id || `p${pg}`))).size;
+  $app.innerHTML = `<div class="screen">
+      ${head(`${items.length} ${items.length === 1 ? "Eintrag" : "Einträge"} aus ${nDocs} ${nDocs === 1 ? "Dokument" : "Dokumenten"} · nur Ansicht`)}
+      <div class="body" style="padding-top:0">
+        ${items.map((it) => {
+          const q = quote(it), fx = fixes(it), pg = (it.sources || [])[0];
+          return `<section class="card info-card" ${g.cave ? 'style="border-color:#F0C4CB"' : ""}>
+            <div class="info-top"><h2>${esc(it.title)}</h2>${it.chip ? `<span class="info-chip ${g.cave ? "cave" : ""}">${esc(it.chip)}</span>` : ""}</div>
+            <dl class="info-grid">
+              ${(it.rows || []).filter(([, v]) => v).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}
+              ${(it.sources || []).length ? `<dt>Quelle</dt><dd style="white-space:pre-line">${esc(sourceLine(it.sources))}</dd>` : ""}
+            </dl>
+            ${q ? `<div class="info-quote"><span>Originaltext</span>${esc(q)}</div>` : ""}
+            ${fx.map((c) => `<div class="note warn">${ICON.info}<span>KI-Korrektur: „${esc(c.original)}“ wurde zu „${esc(c.corrected)}“ geändert.</span></div>`).join("")}
+            ${it.ai && !fx.length ? `<div class="note warn">${ICON.info}<span>Dieser Eintrag wurde von der KI korrigiert.</span></div>` : ""}
+            ${pg ? `<a class="info-link" href="#/case/${enc(id)}/page/${pg}">${ICON.docSmall}Stelle im Original zeigen</a>` : ""}
+          </section>`;
+        }).join("") || `<div class="empty">Keine Einträge.</div>`}
+        <div style="height:28px"></div>
+      </div></div>`;
 }
 
 // ---------- tab: Prüfen (Widersprüche + Medikation)
