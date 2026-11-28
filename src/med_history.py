@@ -114,3 +114,24 @@ def dose_history(result: dict, name: str, pages: list[int] | None = None) -> lis
                            if diff else "= unverändert")
         previous = r
     return rows
+
+
+def chart_series(rows: list[dict]) -> tuple[str | None, str | None, list[tuple[dict, float]]]:
+    """What to plot for a dose history: (label, unit, [(row, value), ...]).
+
+    The daily dose when at least two are known (same unit); otherwise the strength per unit,
+    so a change like 10 mg -> 20 mg still shows. Stopped/paused mentions are left out:
+    'Advagraf 5 mg abgesetzt' is not a dose of 5 mg.
+    """
+    rows = [r for r in rows if r["status"] not in ("stopped", "paused")]
+    daily = [(r, r["daily"][0]) for r in rows if r["daily"]]
+    if len(daily) >= 2 and len({r["daily"][1] for r, _ in daily}) == 1:
+        return "Tagesdosis", f"{daily[0][0]['daily'][1]}/Tag", daily
+    strength = []
+    for r in rows:
+        s = STRENGTH.search(r["strength"] or "")
+        if s:
+            strength.append((r, float(s.group(1).replace(",", ".")), s.group(2)))
+    if len(strength) >= 2 and len({u for *_, u in strength}) == 1:
+        return "Stärke je Einheit", strength[0][2], [(r, v) for r, v, _ in strength]
+    return None, None, []

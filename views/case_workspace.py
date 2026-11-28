@@ -24,7 +24,7 @@ import streamlit as st
 from src import config, store
 from src.case import CONFIDENCE_MIN, SHARPNESS_MIN, process_case, summary_text
 from src.evaluate import score_case
-from src.med_history import dose_history, page_numbers
+from src.med_history import chart_series, dose_history, page_numbers
 from src.report import er_report
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
 from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, cave_panel, chip, cleaned_page,
@@ -527,16 +527,45 @@ with tabs[2]:
                 column_config={"Seite": st.column_config.NumberColumn(width="small"),
                                "Änderung": st.column_config.TextColumn(width="medium"),
                                "Textstelle": st.column_config.TextColumn(width="large")})
-            points = [h for h in hist if h["daily"]]
-            if len(points) >= 2 and len({h["daily"][1] for h in points}) == 1:
-                unit = points[0]["daily"][1]
+            # chart: document date on a real timeline (x), dose (y); undated notes can't be placed
+            dated = [h for h in hist if h["date"]]
+            kind, unit, pts = chart_series(dated)
+            if pts:
+                values = [v for _, v in pts]
+                lo, hi = min(values), max(values)
+                ypad = max((hi - lo) * 0.15, hi * 0.08, 0.5)
+                when = pd.to_datetime([h["date"] for h, _ in pts])
+                xpad = max((when.max() - when.min()) * 0.06, pd.Timedelta(days=10))
+                as_dt = lambda t: alt.DateTime(year=t.year, month=t.month, date=t.day)
                 chart_df = pd.DataFrame({
-                    "Quelle": [f"{i}. S. {h['page']} · {de_date(h['date'])}" for i, h in enumerate(points, 1)],
-                    "Tagesdosis": [h["daily"][0] for h in points]})
-                st.altair_chart(alt.Chart(chart_df).mark_line(point=True, interpolate="step-after").encode(
-                    x=alt.X("Quelle:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("Tagesdosis:Q", title=f"Tagesdosis ({unit})", scale=alt.Scale(zero=True)),
-                    tooltip=["Quelle", "Tagesdosis"]).properties(height=220), use_container_width=True)
+                    "Datum": [t.strftime("%Y-%m-%d") for t in when], "Wert": values,
+                    "Quelle": [f"S. {h['page']} · {h['document']}" for h, _ in pts],
+                    "Angabe": [" ".join(x for x in (h["strength"], h["dosing"]) if x) or h["daily_text"] for h, _ in pts],
+                    "Änderung": [h["change"] for h, _ in pts]})
+                purple = "#6200EA"
+                grid = {"grid": True, "gridDash": [3, 3], "gridColor": "#D0D0D0"}
+                chart = alt.Chart(chart_df).mark_line(
+                    color=purple, strokeWidth=2.2,
+                    point=alt.OverlayMarkDef(color=purple, filled=True, size=60)).encode(
+                    x=alt.X("Datum:T", title="Dokumentdatum",
+                            scale=alt.Scale(domain=[as_dt(when.min() - xpad), as_dt(when.max() + xpad)]),
+                            axis=alt.Axis(format="%d.%m.%Y", labelAngle=0, labelOverlap=True, tickCount=6, **grid)),
+                    y=alt.Y("Wert:Q", title=f"{kind} ({unit})",
+                            scale=alt.Scale(zero=False, nice=False, domain=[max(lo - ypad, 0), hi + ypad]),
+                            axis=alt.Axis(**grid)),
+                    tooltip=[alt.Tooltip("Datum:T", format="%d.%m.%Y"), "Quelle",
+                             alt.Tooltip("Wert:Q", title=f"{kind} ({unit})"), "Angabe", "Änderung"])
+                st.altair_chart(chart.properties(height=300).configure_view(strokeWidth=0),
+                                use_container_width=True)
+                notes = []
+                if kind.startswith("Stärke"):
+                    notes.append("zu wenige vollständige Tagesdosen: gezeigt wird die Stärke je Einheit")
+                if len(dated) < len(hist):
+                    notes.append(f"{len(hist) - len(dated)} Angabe(n) ohne Dokumentdatum nur in der Tabelle")
+                if notes:
+                    st.caption("Hinweis: " + "; ".join(notes) + ".")
+            elif dated != hist and len(dated) < 2:
+                st.caption("Kein Diagramm: zu wenige datierte Angaben mit Dosis.")
 
     changes = _audit()
     if changes:
