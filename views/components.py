@@ -37,11 +37,11 @@ STATUS_LABELS = {"active": "aktiv", "new": "neu", "paused": "pausiert", "stopped
 FACT_COLORS_BGR = {  # highlight colours on the page image (OpenCV uses BGR)
     "meds": (235, 99, 37), "diagnoses": (92, 81, 225), "labs": (178, 145, 8),
     "cave": (60, 20, 220), "contacts": (60, 130, 13), "findings": (180, 60, 150), "negatives": (120, 120, 120),
-    "corrections": (18, 140, 245),
+    "corrections": (18, 140, 245), "safety": (43, 22, 163),
 }
 FACT_LABELS = {"meds": "Medikation", "diagnoses": "Diagnose", "labs": "Labor", "cave": "CAVE",
                "contacts": "Kontakt", "findings": "Befund", "negatives": "Negativbefund",
-               "corrections": "KI-Korrektur"}
+               "corrections": "KI-Korrektur", "safety": "Medikationssicherheit"}
 
 CSS = """
 <style>
@@ -104,6 +104,8 @@ code {font-family: "Atkinson Hyperlegible", monospace !important;}
 .gw-fix .gw-fix-kind {display:inline-block; padding:0 .35rem; border:1px solid var(--amber);
   border-radius:4px; color:var(--amber); font-size:.75rem; font-weight:700;}
 .gw-fix .gw-muted {color:var(--ink-2);}
+.gw-safety {background:var(--cave-bg); color:var(--cave); border-radius:8px; padding:.4rem .7rem; margin:0 0 .5rem 0;
+  font-size:.9rem;} .gw-safety ul {margin:0; padding-left:1.1rem;} .gw-safety li {margin:.1rem 0; list-style:"⚠  ";}
 .gw-contact {border-left:4px solid var(--ok); background:var(--ok-bg); border-radius:0 8px 8px 0; padding:.6rem .9rem;}
 .gw-contact h4 {color:var(--ok); font-size:1rem; margin:0 0 .3rem 0;}
 /* medication table */
@@ -234,6 +236,14 @@ def correction_list(items: list[dict]) -> str:
         rows.append(f'<li><s>{esc(item["original"])}</s> → <b>{esc(corrected)}</b> {badge}'
                     f'{sources([item["page"]])}<br><span class="gw-muted">{esc(item["reason"])}</span></li>')
     return '<div class="gw-note gw-fix"><h4>KI-Korrekturen – bitte prüfen</h4><ul>' + "".join(rows) + "</ul></div>"
+
+
+def safety_list(items: list[dict]) -> str:
+    """Compact red lines for dangerous doses / combinations found by the AI layer."""
+    rows = "".join(
+        f'<li><b>{esc(" + ".join(a["drugs"]))}{" – " + esc(a["danger"]) if a.get("danger") else ""}:</b> {esc(a["issue"])}'
+        f'{". " + esc(a["action"]) if a.get("action") else ""}{sources(a["sources"])}</li>' for a in items)
+    return f'<div class="gw-safety" title="KI-Prüfung, bitte ärztlich bewerten"><ul>{rows}</ul></div>'
 
 
 def html_block(markup: str):

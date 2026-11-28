@@ -56,13 +56,12 @@ A patient arrives in the ER at night with a **bag of paper**: discharge letters,
 **AI where the input is messy** (reading, sorting), **fixed rules where safety needs to be explainable** (what is current, what contradicts), **the doctor decides**.
 
 ### 🚧 Work in progress: AI medication safety check
-### 🛡️ AI medication safety check
 
-With AI extraction, Mistral Large 3 also checks each page for **dangerous doses** (e.g. above the daily maximum, or not matching eGFR, potassium or INR on the same page) and **risky combinations** (e.g. two anticoagulants, anticoagulant + NSAID, "triple whammy").
+Branch [`feature/med-safety-check`](https://github.com/uromi06/get_well_OCR/tree/feature/med-safety-check). With AI extraction, Mistral Large 3 also checks each page for **dangerous doses** (e.g. above the daily maximum, or not matching eGFR, potassium or INR on the same page) and **risky combinations** (e.g. two anticoagulants, anticoagulant + NSAID, "triple whammy").
 
+- Only acute dangers are shown: each alert is rated *akut / grenzwertig / langfristig* and only *akut* is kept; suboptimal or long-term issues, standard combinations and documented dose adjustments are not flagged
 - Alerts are only kept if every drug they name was extracted from that page, and are dropped when a later document stops the drug
-- Shown as a red **Medikationssicherheit** card under CAVE (web app, phone app, handover text), marked *"KI-Prüfung, ärztlich bewerten"*
-- Deliberately conservative to avoid alert fatigue: at most 5 per page, no warnings for standard combinations or documented dose adjustments
+- Shown as a short red line inside the **Medikation** card (phone app) or above the medication table (web app) and in the handover text, marked *"KI-Prüfung, ärztlich bewerten"*
 
 ---
 

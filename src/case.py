@@ -21,6 +21,7 @@ from rapidfuzz import fuzz, process
 from . import config
 from .drugs import DRUGS
 from .extract import read_text
+from .report import safety_label
 from .parse import DOSING, ICD10, ICD10_OCR_FIX, STRENGTH, merge_rows
 from .preprocess import load_image, preprocess, to_gray
 
@@ -589,10 +590,31 @@ def _src(sources):
     return "[S. " + ", ".join(str(s) for s in sources) + "]"
 
 
+def merge_safety(pages: list[dict], medications: list[dict]) -> list[dict]:
+    """Case-wide medication safety alerts (from the AI layer): deduplicated across pages and kept only
+    while every drug involved is still current after the merge (a later "abgesetzt" clears the alert)."""
+    current = {m["name"].casefold() for m in medications if m["status"] != "stopped"}
+    merged = {}
+    for p in sorted(pages, key=lambda p: p["page"]):
+        for a in p.get("safety", []):
+            if not all(d.casefold() in current for d in a["drugs"]):
+                continue
+            key = (a["kind"], tuple(sorted(d.casefold() for d in a["drugs"])))
+            if key not in merged:
+                merged[key] = {**a, "sources": [p["page"]]}
+                continue
+            if p["page"] not in merged[key]["sources"]:
+                merged[key]["sources"].append(p["page"])
+    return sorted(merged.values(), key=lambda a: (a["kind"] != "combination", a["sources"][0]))
+
+
 def summary_text(s: dict) -> str:
     out = []
     if s["cave"]:
         out.append("CAVE: " + "; ".join(f"{c['text']} {_src(c['sources'])}" for c in s["cave"]))
+    if s.get("safety"):
+        out.append("Gefährliche Medikation (KI, bitte prüfen): " + "; ".join(
+            f"{safety_label(a)} {_src(a['sources'])}" for a in s["safety"]))
     if s["warnings"]:
         out.append("Hinweise: " + "; ".join(f"{w['text']} {_src(w['sources'])}" for w in s["warnings"]))
     if s["findings"]:
@@ -652,6 +674,8 @@ def page_facts(p: dict) -> list[dict]:
     for c in p.get("corrections", []):
         out.append({"kind": "corrections", "label": f"{c['original']} → {c['corrected']}",
                     "source_text": c["source_text"]})
+    for a in p.get("safety", []):
+        out.append({"kind": "safety", "label": safety_label(a), "source_text": a["source_text"]})
     return out
 
 
@@ -681,19 +705,22 @@ def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, p
     ok_pages = [p for p in pages if p["quality"] == "ok"]
     extract_errors = []
     for i, p in enumerate(ok_pages, 1):
-        corr = []
+        corr, safety = [], []
         if extractor == "llm":
             progress(f"[KI {i}/{len(ok_pages)}] Seite {p['page']}")
             try:
-                facts, corr = extract_page_llm(p)
+                facts, corr, safety = extract_page_llm(p)
             except MistralError as e:
                 facts = extract_page(p)
                 p["extract_error"] = str(e)
                 extract_errors.append({"page": p["page"], "error": str(e)})
         else:
             facts = extract_page(p)
-        p["facts"], p["corrections"] = facts, corr
+        p["facts"], p["corrections"], p["safety"] = facts, corr, safety
     summary = merge(pages, docs)
+    irrelevant = {d["doc_id"] for d in docs if d["type"] == "irrelevant"}
+    summary["safety"] = merge_safety([p for p in ok_pages if p.get("doc_id") not in irrelevant],
+                                     summary["medications"])
     summary["corrections"] = [{**c, "sources": [p["page"]]}
                               for p in sorted(ok_pages, key=lambda p: p["page"]) for c in p["corrections"]]
     if extract_errors:
@@ -708,7 +735,7 @@ def process_case(folder: Path, out_dir: Path, engine="tesseract", fresh=False, p
                    "status": "done" if p["quality"] == "ok" else "retake", "quality": p["quality"],
                    "sharpness": p["sharpness"], "mean_confidence": p["mean_confidence"],
                    "facts": page_facts(p), "corrections": p.get("corrections", []),
-                   "extract_error": p.get("extract_error")} for p in pages],
+                   "safety": p.get("safety", []), "extract_error": p.get("extract_error")} for p in pages],
         "documents": docs,
         "summary": summary,
     }

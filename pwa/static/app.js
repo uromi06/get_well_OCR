@@ -1111,11 +1111,14 @@ function tabResult(el, d) {
     html: s.diagnoses.length ? `<div class="card-text">${s.diagnoses.slice(0, 12).map((x) => `${esc(x.text)}${x.icd10 ? ` (${esc(x.icd10)})` : ""}${sources(x.sources)}`).join("\n")}</div>` : `<div class="muted">Keine Diagnosen erkannt.</div>`,
     text: "Diagnosen:\n" + s.diagnoses.slice(0, 12).map((x) => x.text + (x.icd10 ? ` (${x.icd10})` : "")).join("\n") });
   const nOk = rv.meds.filter((m) => m.confirmed).length;
+  // dangerous doses / combinations from the AI check: one red line each, inside the medication card
+  const danger = (s.safety || []).map((a) => `${a.drugs.join(" + ")}${a.danger ? ` – ${a.danger}` : ""}: ${a.issue}${a.action ? `. ${a.action}` : ""}`);
+  const dangerHtml = danger.length ? `<div class="note cave" title="KI-Prüfung, bitte ärztlich bewerten"><span>${danger.map((t) => `⚠ ${esc(t)}`).join("<br>")}</span></div>` : "";
   blocks.push({ key: "med", title: "Medikation", edit: "review",
     sub: rv.meds.length ? `<span class="card-sub ${nOk === rv.meds.length ? "ok" : "warn"}">${nOk} von ${rv.meds.length} geprüft</span>` : "",
-    html: meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
-      ${stopped.length ? `<div class="muted">Abgesetzt: ${esc(stopped.map(medLine).join(", "))}</div>` : ""}` : `<div class="muted">Keine Medikamente erkannt.</div>`,
-    text: "Medikation:\n" + meds.map((m) => `${medLine(m)} ${m.dosing || ""}`.trim()).join("\n") + (stopped.length ? `\nAbgesetzt: ${stopped.map(medLine).join(", ")}` : "") });
+    html: dangerHtml + (meds.length ? `<div class="rows">${meds.map((m) => `<div><span>${esc(medLine(m))}${m.status === "new" ? ' <span class="pill">neu</span>' : m.status === "paused" ? ' <span class="pill warn">pausiert</span>' : ""}</span><span class="right">${esc(m.dosing || "–")}</span></div>`).join("")}</div>
+      ${stopped.length ? `<div class="muted">Abgesetzt: ${esc(stopped.map(medLine).join(", "))}</div>` : ""}` : `<div class="muted">Keine Medikamente erkannt.</div>`),
+    text: (danger.length ? "Gefährliche Medikation (KI-Prüfung):\n" + danger.join("\n") + "\n\n" : "") + "Medikation:\n" + meds.map((m) => `${medLine(m)} ${m.dosing || ""}`.trim()).join("\n") + (stopped.length ? `\nAbgesetzt: ${stopped.map(medLine).join(", ")}` : "") });
   if (flagged.length) blocks.push({ key: "lab", title: "Auffällige Laborwerte", edit: "labs",
     html: `<div class="rows">${flagged.map((l) => `<div><span>${esc(l.name)}</span><span class="right">${esc(l.value)} ${esc(l.unit)} ${l.flag === "H" ? "▲" : l.flag === "L" ? "▼" : ""}</span></div>`).join("")}</div>`,
     text: "Laborwerte:\n" + flagged.map((l) => `${l.name} ${l.value} ${l.unit}${l.flag ? ` (${l.flag === "H" ? "hoch" : "niedrig"})` : ""}`).join("\n") });

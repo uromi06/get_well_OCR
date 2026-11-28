@@ -28,7 +28,7 @@ from src.report import er_report
 from src.export import LANGUAGES, patient_plan_pdf, to_csv, to_fhir
 from views.components import (DOC_TYPE_LABELS, FACT_LABELS, STATUS_LABELS, card, cave_panel, chip, cleaned_page,
                               doc_chip, esc, highlight, html_block, inject_css, legend, logo, med_table, ocr_cache,
-                              section, sources, strip, thumbnail, busy_box, correction_list)
+                              section, sources, strip, thumbnail, busy_box, correction_list, safety_list)
 from src import mistral
 
 inject_css()
@@ -360,6 +360,8 @@ with tabs[0]:
     with right:
         st.markdown("#### Medikation")
         order = {"new": 0, "active": 0, "paused": 1, "stopped": 2}
+        if summary.get("safety"):
+            html_block(safety_list(summary["safety"]))
         html_block(med_table(sorted(review["meds"], key=lambda r: (order.get(r["status"], 0), r["name"]))))
         st.caption("Abgeglichen aus allen Dokumenten. Prüfen und bestätigen im Tab 💊 Medikation.")
         html_block(section("Diagnosen", [
